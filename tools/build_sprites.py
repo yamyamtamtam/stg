@@ -239,6 +239,8 @@ def build():
         'MISONO_PORTRAIT': portrait(ROOT/'assets/source/misono_full.png', 400, crop_ratio=0.70),
         # みその: ボス撃破後会話用(ボロボロの全身)
         'MISONO_DEFEATED_PORTRAIT': portrait(ROOT/'assets/source/misono_defeated.png', 420),
+        # うらら: ゲームオーバー会話用(悔しがる顔)
+        'URARA_CRY_PORTRAIT': portrait(ROOT/'assets/source/urara_cry.png', 420),
     }
     return sprites, ports
 
@@ -257,6 +259,7 @@ def inject(sprites, ports):
         'URARA_PORTRAIT':  to_b64(ports['URARA_PORTRAIT']),
         'MISONO_PORTRAIT': to_b64(ports['MISONO_PORTRAIT']),
         'MISONO_DEFEATED_PORTRAIT': to_b64(ports['MISONO_DEFEATED_PORTRAIT']),
+        'URARA_CRY_PORTRAIT': to_b64(ports['URARA_CRY_PORTRAIT']),
     }
     for name, b64 in mapping.items():
         pat = re.compile(name + r'="data:image/png;base64,[^"]+"')
