@@ -21,12 +21,6 @@
     border:1px solid #2a2144; box-shadow:0 0 60px #1d0f3a, 0 0 120px rgba(90,40,160,.25);
   }
   canvas{display:block; background:#05030c; touch-action:none;}
-  @media (max-width:740px), (pointer:coarse){
-    #side{display:none}
-    #wrap{border:none; box-shadow:none}
-    body{align-items:flex-start}
-    canvas{width:100vw; height:auto; max-height:100vh}
-  }
   #side{
     width:220px; background:var(--panel);
     border-left:1px solid #2a2144;
@@ -51,6 +45,11 @@
     border-top:1px solid #2a2144; padding-top:12px;
   }
   #keys b{color:#a99ad4; display:inline-block; width:52px; font-family:monospace}
+  @media (max-width:740px), (pointer:coarse){
+    #side{display:none}
+    #wrap{border:none; box-shadow:none}
+    canvas{width:100vw; height:100vh; object-fit:contain}
+  }
 </style>
 </head>
 <body>
