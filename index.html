@@ -1197,9 +1197,10 @@ function drawDialog(){
     }
   }else{
     // 話者を後に描いて手前に出す
-    // みその: 拡大しつつ下に沈めて(窓に隠す)身長低めに見せる。ボス撃破後のボロボロ立ち絵はもう少し大きく見せる
+    // みその: 拡大しつつ下に沈めて(窓に隠す)身長低めに見せる。
+    // ボス撃破後のボロボロ立ち絵は大きさそのままでもっと下に沈め、うららより少し身長低く見せる
     const misonoPort = game.dialog.set==="post"
-      ? [misonoImg, false, !uraraTurn, 1.18, -22, 78]
+      ? [misonoImg, false, !uraraTurn, 1.18, -22, -60]
       : [misonoImg, false, !uraraTurn, 1.00, -22, 58];
     const ports = [
       [imgUraraPortrait, true,  uraraTurn,  0.85, 8,  108],
