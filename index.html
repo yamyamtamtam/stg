@@ -147,6 +147,10 @@ addEventListener("keydown", e=>{
   keys[e.key] = true;
   if(e.key==="Escape") togglePause();
   if(game.dialog && !e.repeat && (e.key==="z"||e.key==="Z")){ advanceDialog(); return; }
+  if(game.state==="title" && !e.repeat){
+    if(e.key==="ArrowLeft")  game.diff=clamp(game.diff-1,0,DIFF_NAMES.length-1);
+    if(e.key==="ArrowRight") game.diff=clamp(game.diff+1,0,DIFF_NAMES.length-1);
+  }
   if(game.state!=="play" && (e.key==="z"||e.key==="Z")) startGame();
 });
 addEventListener("keyup", e=> keys[e.key]=false);
@@ -160,7 +164,15 @@ cv.addEventListener("touchstart", e=>{
   touch.lx=t.clientX; touch.ly=t.clientY;
   touch.active=true;
   touch.slow = e.touches.length>=2;
-  if(game.state!=="play"){ startGame(); touch.lastTap=0; return; }
+  if(game.state!=="play"){
+    if(game.state==="title"){
+      const rect=cv.getBoundingClientRect(), scale=W/rect.width;
+      const cx=(t.clientX-rect.left)*scale, cy=(t.clientY-rect.top)*scale;
+      const chip=DIFF_CHIPS.find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
+      if(chip){ game.diff=chip.i; touch.lastTap=0; return; } // 難易度チップをタップ: 選択のみ(スタートはしない)
+    }
+    startGame(); touch.lastTap=0; return;
+  }
   if(game.dialog){ advanceDialog(); touch.lastTap=0; return; }
   const now=performance.now();
   if(now-touch.lastTap<280){ touch.bomb=true; touch.lastTap=0; }
@@ -191,7 +203,20 @@ const game = {
   score:0, hi:0,
   scroll:0,
   shake:0,
+  diff:1,               // 難易度: 0=EASY 1=NORMAL 2=HARD 3=LUNATIC
 };
+
+//--- 難易度設定(4段階): 弾速・敵HP・初期残機/ボム数を調整 ---
+const DIFF_NAMES        = ["EASY","NORMAL","HARD","LUNATIC"];
+const DIFF_BULLET_SPEED = [0.75,  1.0,     1.2,   1.45];
+const DIFF_HP           = [0.7,   1.0,     1.3,   1.7];
+const DIFF_LIVES        = [4,     3,       2,     2];
+const DIFF_BOMBS        = [4,     3,       2,     1];
+// タイトル画面の難易度選択チップ(タッチ当たり判定と描画で共有)
+const DIFF_CHIPS = DIFF_NAMES.map((name,i)=>({
+  name, i, w:100, h:28, y:H/2+2,
+  x: (W-(100*4+8*3))/2 + i*108,
+}));
 
 const player = {
   x:W/2, y:H-80, r:2.5, grazeR:16,
@@ -221,16 +246,18 @@ function popText(x,y,text,color="#ffd76e"){
 // 敵弾ヘルパー
 //======================================================================
 function shot(x,y,angle,speed,opt={}){
+  speed *= DIFF_BULLET_SPEED[game.diff];
+  const digit = opt.seq ? DIGIT_SEQ[digitIdx++ % DIGIT_SEQ.length] : null;
   eBullets.push({
     x,y, angle, speed,
     vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed,
-    r: opt.r ?? 4,
+    r: digit ? Math.max(opt.r ?? 4, 6.5) : (opt.r ?? 4), // 数字弾は視認性のため一回り大きく
     color: opt.color ?? "#ff6e9c",
     edge: opt.edge ?? "#fff",
     accel: opt.accel ?? 0,
     turn: opt.turn ?? 0,
     moon: opt.moon ?? false,
-    digit: opt.seq ? DIGIT_SEQ[digitIdx++ % DIGIT_SEQ.length] : null,
+    digit,
     word: opt.word ?? null,
     grazed:false, t:0,
     update: opt.update ?? null,
@@ -255,10 +282,11 @@ function ring(x,y,n,speed,offset=0,opt){
 // 敵
 //======================================================================
 function spawnEnemy(def){
+  const hp = (def.hp ?? 10) * DIFF_HP[game.diff];
   enemies.push(Object.assign({
     x:0,y:0,hp:10,r:12,t:0,score:100,dropPow:1,dropPoint:1,
     color:"#8ad4ff", dead:false,
-  },def));
+  }, def, {hp}));
 }
 
 // 雑魚の行動パターン集
@@ -435,7 +463,7 @@ function nextPhase(){
   boss.phase++;
   if(boss.phase >= spells.length){ bossDefeated(); return; }
   const sp = spells[boss.phase];
-  boss.hp = boss.maxHp = sp.hp;
+  boss.hp = boss.maxHp = sp.hp * DIFF_HP[game.diff];
   boss.spellMax = boss.spellTime = sp.time;
   boss.t = -60; // 登場/切替の待ち
   eBullets.length = 0; // 弾消し
@@ -836,10 +864,12 @@ function drawEnemies(){
       ctx.beginPath(); ctx.arc(0,0,e.r,0,TAU); ctx.fill();
     }
     if(!strong){
-      ctx.font="bold 9px monospace"; ctx.textAlign="center";
-      ctx.fillStyle="#7ee6a0";
-      ctx.fillText("810", 0, -e.r-9);
-      ctx.textAlign="left";
+      ctx.font="bold 13px monospace"; ctx.textAlign="center";
+      ctx.lineWidth=3; ctx.strokeStyle="rgba(10,7,20,0.85)";
+      ctx.strokeText("810", 0, -e.r-12);
+      ctx.fillStyle="#9dffc0";
+      ctx.fillText("810", 0, -e.r-12);
+      ctx.lineWidth=1; ctx.textAlign="left";
     }
     ctx.restore();
   }
@@ -932,9 +962,12 @@ function drawBullets(){
       ctx.fillStyle=b.color;
       ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.62,0,TAU); ctx.fill();
       if(b.digit){
-        ctx.font="bold 8px monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.font="bold 11px monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.lineWidth=2.5; ctx.strokeStyle="rgba(255,255,255,0.65)";
+        ctx.strokeText(b.digit,b.x,b.y+0.5);
         ctx.fillStyle="#1a0f2a";
         ctx.fillText(b.digit,b.x,b.y+0.5);
+        ctx.lineWidth=1;
       }
     }
   }
@@ -976,8 +1009,25 @@ function drawOverlay(){
     ctx.fillText("インターネット民俗STG",W/2,H/2-60);
     ctx.fillStyle="#8b7fb5"; ctx.font="12px sans-serif";
     ctx.fillText("〜 唯心論 vs 唯物論 〜",W/2,H/2-32);
+    // 難易度選択(4段階): EASY/NORMAL/HARD/LUNATIC
+    ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
+    ctx.fillText("DIFFICULTY",W/2,H/2-8);
+    for(const c of DIFF_CHIPS){
+      const sel = c.i===game.diff;
+      ctx.fillStyle = sel ? "rgba(201,167,255,0.28)" : "rgba(255,255,255,0.05)";
+      ctx.fillRect(c.x,c.y,c.w,c.h);
+      ctx.strokeStyle = sel ? "#c9a7ff" : "#4a4066";
+      ctx.lineWidth = sel ? 2 : 1;
+      ctx.strokeRect(c.x,c.y,c.w,c.h);
+      ctx.fillStyle = sel ? "#ffd76e" : "#8b7fb5";
+      ctx.font = sel ? "bold 11px monospace" : "11px monospace";
+      ctx.fillText(c.name, c.x+c.w/2, c.y+c.h/2+4);
+    }
+    ctx.lineWidth=1;
+    ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
+    if(!IS_TOUCH) ctx.fillText("← → で難易度変更",W/2,H/2+48);
     ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
-    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップでスタート":"Z キーでスタート",W/2,H/2+40);
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップでスタート":"Z キーでスタート",W/2,H/2+72);
   }
   else if(game.state==="over"){
     ctx.fillStyle="#ff5d7a"; ctx.font="bold 30px serif";
@@ -1135,7 +1185,7 @@ function render(){
 function startGame(){
   game.state="play"; game.paused=false;
   game.score=0; game.graze=0; game.shake=0;
-  player.lives=3; player.bombs=3; player.power=1;
+  player.lives=DIFF_LIVES[game.diff]; player.bombs=DIFF_BOMBS[game.diff]; player.power=1;
   player.x=W/2; player.y=H-80; player.alive=true; player.invul=120;
   player.bombTime=0;
   pBullets=[]; eBullets=[]; enemies=[]; items=[]; effects=[]; boss=null; cutIn=null;
