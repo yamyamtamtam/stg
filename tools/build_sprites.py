@@ -67,7 +67,7 @@ MISONO_PAL = {
  'U':hex_('4a3c60'),'u':hex_('3a2f4e'),'s':hex_('cfc4e8'),'m':hex_('e6d9fa'),
  'p':hex_('8257c9'),'P':hex_('241d30'),'B':hex_('241d30'),'b':hex_('6e4fb0'),
 }
-MISONO = [  # 棗みその 22x32
+MISONO = [  # 棗みその 22x40 (頭身を上げるため胴体・脚を延長)
 ".......OOOOOOOO.......",
 "......OHHhhHHHHO......",
 ".....OHHhhHHHHHHO.....",
@@ -84,6 +84,9 @@ MISONO = [  # 棗みその 22x32
 "..OHHPpUUUUUUUUpPHHO..",
 "..OHHUUUsUUUUsUUUHHO..",
 "..OHHUUUsUUUUsUUUHHO..",
+".OHHuUUUUUUUUUUUUuHHO.",
+".OHHuUUUUUUUUUUUUuHHO.",
+".OHHuUUUUUUUUUUUUuHHO.",
 "..OHHUUUUUmmUUUUUHHO..",
 "..OHHUUUUmmUUUUUUHHO..",
 "..OHHUUUmmUUUUUUUHHO..",
@@ -92,9 +95,14 @@ MISONO = [  # 棗みその 22x32
 "..OHHUUUUUmmmUUUUHHO..",
 ".OHHuUUUUUUUUUUUUuHHO.",
 ".OHHuUUUUUUUUUUUUuHHO.",
+".OHHuUUUUUUUUUUUUuHHO.",
+".OHHuUUUUUUUUUUUUuHHO.",
 ".OHHOuUUUUUUUUUUuOHHO.",
 ".OLHOOUUUUUUUUUUOOHLO.",
 ".OLL..OOOOOOOOOO..LLO.",
+".OLL..OOOOOOOOOO..LLO.",
+"..OLL...FF..FF...LLO..",
+"..OLL...FF..FF...LLO..",
 "..OLL...FF..FF...LLO..",
 "..OLL...BB..BB...LLO..",
 "..OLL...BB..BB...LLO..",
@@ -177,6 +185,16 @@ def epx(im):
             dst[2*x,2*y]=p1; dst[2*x+1,2*y]=p2; dst[2*x,2*y+1]=p3; dst[2*x+1,2*y+1]=p4
     return out
 
+def lean(im, max_shift, pad):
+    """移動時の傾き差分スプライット生成: 行ごとに横シフトし、下端(足元)を軸に上ほど傾ける"""
+    w, h = im.size
+    out = Image.new('RGBA', (w+pad*2, h), (0,0,0,0))
+    for y in range(h):
+        shift = round(max_shift * (1 - y/(h-1))) if h > 1 else 0
+        row = im.crop((0, y, w, y+1))
+        out.paste(row, (pad+shift, y), row)
+    return out
+
 def portrait(path, height, crop_ratio=None):
     """立ち絵加工: αでトリム → (任意)下をカット → 縮小 → 減色"""
     im = Image.open(path)
@@ -195,10 +213,17 @@ def to_b64(im):
     buf = io.BytesIO(); im.save(buf, 'PNG', optimize=True)
     return base64.b64encode(buf.getvalue()).decode()
 
+URARA_LEAN, MISONO_LEAN = 3, 5  # 傾き差分スプライットの最大シフト量(px, EPX後の等倍)
+
 def build():
+    urara_im, misono_im = epx(render(URARA, URARA_PAL)), epx(render(MISONO, MISONO_PAL))
     sprites = {
-        'urara':  epx(render(URARA,  URARA_PAL)),
-        'misono': epx(render(MISONO, MISONO_PAL)),
+        'urara':       lean(urara_im, 0, URARA_LEAN),
+        'urara_left':  lean(urara_im, -URARA_LEAN, URARA_LEAN),
+        'urara_right': lean(urara_im,  URARA_LEAN, URARA_LEAN),
+        'misono':       lean(misono_im, 0, MISONO_LEAN),
+        'misono_left':  lean(misono_im, -MISONO_LEAN, MISONO_LEAN),
+        'misono_right': lean(misono_im,  MISONO_LEAN, MISONO_LEAN),
         'zako':   epx(render(ZAKO,   ZAKO_PAL)),
         'zako2':  epx(render(ZAKO2,  ZAKO2_PAL)),
     }
@@ -219,8 +244,12 @@ def inject(sprites, ports):
     html_path = ROOT / 'index.html'
     html = html_path.read_text(encoding='utf-8')
     mapping = {
-        'URARA_SPRITE':  to_b64(sprites['urara']),
-        'MISONO_SPRITE': to_b64(sprites['misono']),
+        'URARA_SPRITE':       to_b64(sprites['urara']),
+        'URARA_SPRITE_LEFT':  to_b64(sprites['urara_left']),
+        'URARA_SPRITE_RIGHT': to_b64(sprites['urara_right']),
+        'MISONO_SPRITE':       to_b64(sprites['misono']),
+        'MISONO_SPRITE_LEFT':  to_b64(sprites['misono_left']),
+        'MISONO_SPRITE_RIGHT': to_b64(sprites['misono_right']),
         'ZAKO_SPRITE':   to_b64(sprites['zako']),
         'ZAKO2_SPRITE':  to_b64(sprites['zako2']),
         'URARA_PORTRAIT':  to_b64(ports['URARA_PORTRAIT']),
