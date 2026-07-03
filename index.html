@@ -244,24 +244,30 @@ const INTRO_ORDER = ["title","scenario","difficulty","playerinfo","tutorial"];
 const SCENARIOS = [
   {name:"ホモガキミームの海", sub:"114514 connect."},
 ];
+// demo: チュートリアル中に自機を自動操作して見せる実演の種類
 const TUTORIAL_STEPS_KB = [
-  {key:"矢印キー", desc:"移動"},
-  {key:"Z", desc:"ショット / 決定・会話送り"},
-  {key:"X", desc:"陽符(ボム)"},
-  {key:"Shift", desc:"低速移動(当たり判定表示)"},
+  {key:"矢印キー", desc:"移動", demo:"move"},
+  {key:"Z", desc:"ショット / 決定・会話送り", demo:"shot"},
+  {key:"X", desc:"陽符(ボム)", demo:"bomb"},
+  {key:"Shift", desc:"低速移動(当たり判定表示)", demo:"slow"},
 ];
 const TUTORIAL_STEPS_TOUCH = [
-  {key:"ドラッグ", desc:"移動(自動ショット)"},
-  {key:"ダブルタップ", desc:"ボム"},
-  {key:"2本指タッチ", desc:"低速移動"},
-  {key:"タップ", desc:"スタート・会話送り"},
+  {key:"ドラッグ", desc:"移動(自動ショット)", demo:"move"},
+  {key:"ダブルタップ", desc:"ボム", demo:"bomb"},
+  {key:"2本指タッチ", desc:"低速移動", demo:"slow"},
+  {key:"タップ", desc:"スタート・会話送り", demo:"shot"},
 ];
 function introAdvance(){
   const idx = INTRO_ORDER.indexOf(game.state);
   if(idx===-1) return;
-  if(idx===INTRO_ORDER.length-1){ startGame(); return; }
+  if(idx===INTRO_ORDER.length-1){ keys["Shift"]=false; startGame(); return; }
   game.state = INTRO_ORDER[idx+1];
-  if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; }
+  if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; resetTutorialDemoStep(); }
+}
+function resetTutorialDemoStep(){
+  player.x=W/2; player.y=H-80; player.dir=0; player.bombTime=0;
+  pBullets.length=0;
+  keys["Shift"]=false;
 }
 
 //--- タイトル画面のニコニコ動画風流れコメント ---
@@ -287,11 +293,51 @@ function updateIntro(){
   }
   if(game.state==="tutorial"){
     const steps = IS_TOUCH ? TUTORIAL_STEPS_TOUCH : TUTORIAL_STEPS_KB;
-    if(++game.tutTimer > 90){
+    updateTutorialDemo();
+    if(++game.tutTimer > 150){
       game.tutTimer=0; game.tutIdx++;
-      if(game.tutIdx>=steps.length) startGame();
+      if(game.tutIdx>=steps.length){ keys["Shift"]=false; startGame(); }
+      else resetTutorialDemoStep();
     }
   }
+}
+
+// チュートリアル各項目を自機の自動操作で実演する
+function updateTutorialDemo(){
+  const steps = IS_TOUCH ? TUTORIAL_STEPS_TOUCH : TUTORIAL_STEPS_KB;
+  const demo = steps[game.tutIdx % steps.length].demo;
+  const t = game.tutTimer;
+
+  if(demo==="move"){
+    player.x = clamp(W/2 + Math.sin(t*0.06)*70, 12, W-12);
+    player.dir = Math.cos(t*0.06)>=0 ? 1 : -1;
+    player.slowLerp += (0-player.slowLerp)*0.2;
+  }else if(demo==="shot"){
+    player.dir = 0;
+    player.slowLerp += (0-player.slowLerp)*0.2;
+    if(t%6===0){
+      const n=5;
+      for(let i=0;i<n;i++){
+        const off = i/(n-1)-0.5;
+        const a = -Math.PI/2 + off*0.6;
+        pBullets.push({x:player.x+off*16, y:player.y-10, vx:Math.cos(a)*6, vy:Math.sin(a)*6, dmg:0, r:i===2?4:3, type:i===2?"main":"opt"});
+      }
+    }
+  }else if(demo==="bomb"){
+    player.dir = 0;
+    player.slowLerp += (0-player.slowLerp)*0.2;
+    if(t===0) player.bombTime=120;
+    if(player.bombTime>0) player.bombTime--;
+  }else{ // slow
+    player.x = clamp(W/2 + Math.sin(t*0.05)*20, 12, W-12);
+    player.dir = 0;
+    keys["Shift"] = true;
+    player.slowLerp += (1-player.slowLerp)*0.15;
+  }
+  if(demo!=="slow") keys["Shift"]=false;
+
+  for(const b of pBullets){ b.x+=b.vx; b.y+=b.vy; }
+  pBullets = pBullets.filter(b=>b.y>-30 && b.y<H+30 && b.x>-30 && b.x<W+30);
 }
 
 const player = {
@@ -1442,7 +1488,7 @@ function startGame(){
   game.score=0; game.graze=0; game.shake=0;
   player.lives=DIFF_LIVES[game.diff]; player.bombs=DIFF_BOMBS[game.diff]; player.power=1;
   player.x=W/2; player.y=H-80; player.alive=true; player.invul=120;
-  player.bombTime=0;
+  player.bombTime=0; player.slowLerp=0; player.dir=0;
   pBullets=[]; eBullets=[]; enemies=[]; items=[]; effects=[]; boss=null; cutIn=null;
   game.dialog=null;
   game.banner={t:0, dur:210};
