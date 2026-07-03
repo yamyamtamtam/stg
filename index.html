@@ -1069,8 +1069,8 @@ function drawBoss(){
   }
 }
 
-function drawBullets(){
-  // 自弾(太陽モチーフ: くるくる回る)
+function drawPlayerBullets(){
+  // 自弾(太陽モチーフ: くるくる回る)。敵弾幕と重なった時に見づらくならないよう最背面(drawItemsより前)で描く
   ctx.globalAlpha=0.95;
   for(const b of pBullets){
     const spr = b.type==="main" ? sunMain : sunOpt;
@@ -1080,7 +1080,11 @@ function drawBullets(){
     ctx.restore();
   }
   ctx.globalAlpha=1;
-  // 敵弾: 単語弾 / 三日月(ボス) / 縁取り丸(+数字)
+}
+
+function drawEnemyBullets(){
+  // 敵弾: 単語弾 / 三日月(ボス) / 縁取り丸(+数字)。アイテムと見分けやすいよう薄くブラーをかける
+  ctx.filter="blur(0.7px)";
   for(const b of eBullets){
     if(b.word){
       ctx.save(); ctx.translate(b.x,b.y);
@@ -1110,6 +1114,7 @@ function drawBullets(){
       }
     }
   }
+  ctx.filter="none";
   ctx.textAlign="left"; ctx.textBaseline="alphabetic";
 }
 
@@ -1192,7 +1197,7 @@ function drawOverlay(){
     ctx.fillText("難易度選択",W/2,listTop-30);
     for(const c of DIFF_CHIPS){
       const sel = c.i===game.diff;
-      ctx.fillStyle = sel ? "rgba(201,167,255,0.28)" : "rgba(255,255,255,0.05)";
+      ctx.fillStyle = sel ? "rgba(201,167,255,0.14)" : "rgba(255,255,255,0.14)"; // 選択有無で透過率は変えない
       ctx.fillRect(c.x,c.y,c.w,c.h);
       ctx.strokeStyle = sel ? "#c9a7ff" : "#4a4066";
       ctx.lineWidth = sel ? 2 : 1;
@@ -1383,6 +1388,18 @@ function drawDialog(){
   }
 }
 
+function drawDifficultyBadge(){
+  if(game.state!=="play") return;
+  const label = DIFF_NAMES[game.diff];
+  ctx.save();
+  ctx.font="bold 10px monospace"; ctx.textAlign="left";
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle="rgba(5,3,12,0.55)"; ctx.fillRect(6,6,tw+14,16);
+  ctx.strokeStyle="rgba(201,167,255,0.5)"; ctx.strokeRect(6,6,tw+14,16);
+  ctx.fillStyle="#c9a7ff"; ctx.fillText(label,13,17.5);
+  ctx.restore(); ctx.textAlign="left";
+}
+
 function drawHUD(){
   if(!IS_TOUCH || game.state!=="play" || game.dialog) return;
   ctx.save();
@@ -1401,14 +1418,16 @@ function render(){
   ctx.save();
   if(game.shake>0) ctx.translate(rand(-game.shake,game.shake)*0.5, rand(-game.shake,game.shake)*0.5);
   drawBG();
+  drawPlayerBullets();
   drawItems();
   drawEnemies();
   drawBoss();
   drawPlayer();
-  drawBullets();
+  drawEnemyBullets();
   drawEffects();
   drawBanner();
   drawCutIn();
+  drawDifficultyBadge();
   drawHUD();
   drawDialog();
   ctx.restore();
