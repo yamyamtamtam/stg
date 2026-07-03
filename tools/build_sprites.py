@@ -205,53 +205,56 @@ BUTA = [  # 豚(顔面) 14x15
 ]
 
 HIME_PAL = {
- 'O':hex_('2c2338'), 'H':hex_('f5e1b8'), 'h':hex_('fff6e0'),
- 'R':hex_('e8829e'), 'r':hex_('f5b8c8'),
- 'F':hex_('ffe3c8'), 'f':hex_('f7b8c4'), 't':hex_('7ec6f0'),
+ 'O':hex_('2c2338'),
+ 'H':hex_('f2e2ba'), 'h':hex_('fbf3dc'),   # 髪(地/ハイライト)
+ 'R':hex_('c9a8d9'), 'r':hex_('e0c8ec'),   # 左花(ラベンダー)
+ 'P':hex_('e69a92'), 'p':hex_('f2bcb4'),   # 右花(ピンク)
+ 'G':hex_('7fae7a'),                       # 葉
+ 'F':hex_('fbe3cc'), 'f':hex_('f4b8c0'), 't':hex_('7ec6f0'),
  'E':hex_('6b5842'), 'e':hex_('ffffff'), 'M':hex_('c97a85'),
- 'D':hex_('a8b8e8'), 'd':hex_('d4dcf5'),
- 'B':hex_('f0a8c0'), 'W':hex_('ffffff'), 'K':hex_('5c4a3a'),
+ 'D':hex_('cfc9de'), 'd':hex_('e6e2f0'),   # ドレス(ラベンダーグレー・地/ハイライト)
+ 'B':hex_('eeaebb'), 'W':hex_('f5f3f7'), 'K':hex_('5c4a3a'),
 }
-HIME = [  # オタサーの姫(通常) 22x34
+HIME = [  # オタサーの姫(通常) 22x34: 添付イラスト(ブロンド+花冠+ラベンダーグレーのドレス)を元にドット絵化
 ".......OOOOOOOO.......",
 "......OHHHHHHHHO......",
 ".....OHHHHHHHHHHO.....",
 "....OHHHHHHHHHHHHO....",
-"...RRHHHHHHHHHHHHO....",
-"..RrRHHHHHHHHHHHHHO...",
-"..RrOHHHHHHHHHHHHHO...",
-"..OOOHHOFFFFFFFFOHHO..",
-"...OHHFFFFFFFFFFHHO...",
-"...OHHFFeEFFFFeEHHO...",
-"...OHHFfFFFFFFFfHHO...",
-"...OHHFFFFFMMFFFHHO...",
-"...OHHOFFFFFFFFOHHO...",
-"..OHHHOOOOOOOOOOHHHO..",
-"..OHHHDDBBBBBBDDHHHO..",
-".OHHDDDDBBBBBBDDDDHHO.",
-".OHDDDDDDDDDDDDDDDDHO.",
-".OHDDDDDDDDDDDDDDDDHO.",
-".OHhDDDDDDDDDDDDDDhHO.",
-".OHhDDDDDDDDDDDDDdhHO.",
-"OHhDDDDDDDDDDDDDDDdhHO",
-"OHhDDDDDDDDDDDDDDDdhHO",
-"OHhDDDDDDDDDDDDDDDdhHO",
-".OHDDDDDDDDDDDDDDDHO..",
-".OHWWDDDDDDDDDDWWWHO..",
-".OWWWWWWWWWWWWWWWWWO..",
-"..OWWWWWWWWWWWWWWWO...",
-"..OWWWWWWWWWWWWWWWO...",
-"...OWW..FF....FFWWO...",
-"...OW..FFFF..FFFFWO...",
+"...RROHHHHHHHHOPPO....",
+"..RrROHHHHHHHHOPpPO...",
+"..GRROHHHHHHHHOPpGO...",
+".OOOOHHOFFFFFFFFOHHOO.",
+"..OHHFFFFFFFFFFFFHHO..",
+"..OHHFFeEFFFFeEFFHHO..",
+"..OHHFfFFFFFFFFfFHHO..",
+"..OHHFFFFFMMFFFFFHHO..",
+"..OHHOFFFFFFFFFFOHHO..",
+".OHHHOOOOOOOOOOOOHHHO.",
+".OHHHDDBBBBBBBBDDHHHO.",
+"OHHDDDDDBBBBBBDDDDDHHO",
+"OHDDDDDDDDDDDDDDDDDDHO",
+"OHDDDDDDDDDDDDDDDDDDHO",
+"OHdDDDDDDDDDDDDDDDdDHO",
+"OHdDDDDDDDDDDDDDDDdDHO",
+"HdDDDDDDDDDDDDDDDDDdDH",
+"HdDDDDDDDDDDDDDDDDDdDH",
+"HdDDDDDDDDDDDDDDDDDdDH",
+".HDDDDDDDDDDDDDDDDDDH.",
+".HWWDDDDDDDDDDDDWWWDH.",
+".HWWWWWWWWWWWWWWWWWWH.",
+"..WWWWWWWWWWWWWWWWWW..",
+"..WWWWWWWWWWWWWWWWWW..",
+"...WW..FF....FF..WW...",
+"...W..FFFF..FFFF..W...",
 "....O..FFFF..FFFF.....",
 ".......FFFF..FFFF.....",
 ".......OKKO..OKKO.....",
 "........KK....KK......",
 ]
 HIME_ANGRY = list(HIME)  # 発狂("ぴえん")顔差分: 顔部分だけ差し替え
-HIME_ANGRY[8]  = "...OHHFFFOFFFOFFHHO..."  # 眉間にシワ
-HIME_ANGRY[10] = "...OHHFftFFFFFtfHHO..."  # 涙目
-HIME_ANGRY[11] = "...OHHFFFFMMMMFFHHO..."  # 開いた口
+HIME_ANGRY[8]  = "..OHHFFFOFFFFOFFFHHO.."  # 眉間にシワ
+HIME_ANGRY[10] = "..OHHFftFFFFFFtfFHHO.."  # 涙目
+HIME_ANGRY[11] = "..OHHFFFFFMMMMFFFHHO.."  # 開いた口(発狂)
 
 # ======================================================================
 def render(rows, pal):
