@@ -219,6 +219,7 @@ const game = {
   shake:0,
   diff:1,               // 難易度: 0=EASY 1=NORMAL 2=HARD 3=LUNATIC
   tutIdx:0, tutTimer:0,  // 操作チュートリアル(自動再生)の進行
+  overPending:false,     // ゲームオーバー会話が進行中/予約済み(ボス撃破会話に上書きされないようにする)
 };
 
 //--- 難易度設定(4段階): 弾速よりも弾密度/パターン数・敵HP・初期残機/ボム数で調整 ---
@@ -662,7 +663,7 @@ function bossDefeated(){
   for(let i=0;i<12;i++) items.push(makeItem(boss.x+rand(-40,40), boss.y+rand(-30,30), i<4?"pow":"point"));
   boss=null;
   eBullets.length=0;
-  setTimeout(()=>{ if(game.state==="play") startDialogueAfter(); }, 2200);
+  setTimeout(()=>{ if(game.state==="play" && !game.overPending) startDialogueAfter(); }, 2200);
 }
 
 //======================================================================
@@ -772,6 +773,7 @@ function playerHit(){
   eBullets = eBullets.filter(b=>((b.x-player.x)**2+(b.y-player.y)**2)>150*150);
   if(player.lives<0){
     player.lives=0; player.respawn=99999; // ゲームオーバー会話中は復活させない
+    game.overPending=true; // ボス撃破タイミングと重なってもボス撃破会話に上書きされないようにする
     setTimeout(()=>{ if(game.state==="play") startDialogueOver(); }, 900);
   }
   else player.bombs=Math.max(player.bombs,2);
@@ -1394,9 +1396,9 @@ function drawDialog(){
     ctx.filter="none"; ctx.globalAlpha=1;
   };
   if(isOver){
-    // ゲームオーバー会話: うらら単独を画面正面(中央)に大きく表示
+    // ゲームオーバー会話: うらら単独を画面正面(中央)に表示
     if(imgUraraCry.complete && imgUraraCry.naturalWidth){
-      const scale=1.35, pw=imgUraraCry.naturalWidth*scale, ph=imgUraraCry.naturalHeight*scale;
+      const scale=1.05, pw=imgUraraCry.naturalWidth*scale, ph=imgUraraCry.naturalHeight*scale;
       ctx.drawImage(imgUraraCry, (W-pw)/2, H-ph-118, pw, ph);
     }
   }else{
@@ -1485,7 +1487,7 @@ function render(){
 //======================================================================
 function startGame(){
   game.state="play"; game.paused=false;
-  game.score=0; game.graze=0; game.shake=0;
+  game.score=0; game.graze=0; game.shake=0; game.overPending=false;
   player.lives=DIFF_LIVES[game.diff]; player.bombs=DIFF_BOMBS[game.diff]; player.power=1;
   player.x=W/2; player.y=H-80; player.alive=true; player.invul=120;
   player.bombTime=0; player.slowLerp=0; player.dir=0;
