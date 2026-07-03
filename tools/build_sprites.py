@@ -157,6 +157,102 @@ ZAKO2 = [  # 強雑魚(バンダナ) 14x16
 ".OOOOOOOOOOO..",
 ]
 
+CHIUMA_PAL = {
+ 'O':hex_('231a1c'), 'K':hex_('2e2622'), 'k':hex_('45392f'),
+ 'S':hex_('d4b896'), 's':hex_('c2a17e'),
+ 'G':hex_('4a4642'), 'e':hex_('f0ede8'), 'n':hex_('a8876a'),
+ 'm':hex_('b89474'), 'q':hex_('8a5850'), 'N':hex_('2c3350'),
+}
+CHIUMA = [  # チー牛(顔面) 14x15
+"..OOOOOOOOOO..",
+".OKKKKKKKKKKO.",
+".OKkkKKKKkkKO.",
+".OKSSSSSSSSKO.",
+".OSGGGGGGGGSO.",
+".OSGeGGGGeGSO.",
+".OSGGGGGGGGSO.",
+"..OSSSnSSSO...",
+"..OSmSSSmSO...",
+"..OSSqqqSSO...",
+"...OSSSSSO....",
+"...OSSSSSO....",
+"..ONNSSNNNO...",
+".ONNNNNNNNNO..",
+"..OOOOOOOOO...",
+]
+
+BUTA_PAL = {
+ 'O':hex_('3a1c1c'), 'K':hex_('e8a0a8'), 'k':hex_('f2bcc2'),
+ 'S':hex_('f0a8b0'), 's':hex_('e88f9a'),
+ 'n':hex_('7a3038'), 'e':hex_('2c1418'), 'm':hex_('c25a68'),
+}
+BUTA = [  # 豚(顔面) 14x15
+"..OKKKKKKKO...",
+".OKKKKKKKKKO..",
+"OKKSSSSSSSKKO.",
+"OKSSSSSSSSSKO.",
+"OKSeSSSSSeSKO.",
+"OKSSSSSSSSSKO.",
+"OKSSnnnnnSSKO.",
+"OKSSnnnnnSSKO.",
+"OKSSnnnnnSSKO.",
+".OKSSSmSSSKO..",
+"..OKSSSSSKO...",
+"..OKKSSSKKO...",
+"...OKKKKKO....",
+"....OKKKO.....",
+".....OOO......",
+]
+
+HIME_PAL = {
+ 'O':hex_('2c2338'), 'H':hex_('f5e1b8'), 'h':hex_('fff6e0'),
+ 'R':hex_('e8829e'), 'r':hex_('f5b8c8'),
+ 'F':hex_('ffe3c8'), 'f':hex_('f7b8c4'), 't':hex_('7ec6f0'),
+ 'E':hex_('6b5842'), 'e':hex_('ffffff'), 'M':hex_('c97a85'),
+ 'D':hex_('a8b8e8'), 'd':hex_('d4dcf5'),
+ 'B':hex_('f0a8c0'), 'W':hex_('ffffff'), 'K':hex_('5c4a3a'),
+}
+HIME = [  # オタサーの姫(通常) 22x34
+".......OOOOOOOO.......",
+"......OHHHHHHHHO......",
+".....OHHHHHHHHHHO.....",
+"....OHHHHHHHHHHHHO....",
+"...RRHHHHHHHHHHHHO....",
+"..RrRHHHHHHHHHHHHHO...",
+"..RrOHHHHHHHHHHHHHO...",
+"..OOOHHOFFFFFFFFOHHO..",
+"...OHHFFFFFFFFFFHHO...",
+"...OHHFFeEFFFFeEHHO...",
+"...OHHFfFFFFFFFfHHO...",
+"...OHHFFFFFMMFFFHHO...",
+"...OHHOFFFFFFFFOHHO...",
+"..OHHHOOOOOOOOOOHHHO..",
+"..OHHHDDBBBBBBDDHHHO..",
+".OHHDDDDBBBBBBDDDDHHO.",
+".OHDDDDDDDDDDDDDDDDHO.",
+".OHDDDDDDDDDDDDDDDDHO.",
+".OHhDDDDDDDDDDDDDDhHO.",
+".OHhDDDDDDDDDDDDDdhHO.",
+"OHhDDDDDDDDDDDDDDDdhHO",
+"OHhDDDDDDDDDDDDDDDdhHO",
+"OHhDDDDDDDDDDDDDDDdhHO",
+".OHDDDDDDDDDDDDDDDHO..",
+".OHWWDDDDDDDDDDWWWHO..",
+".OWWWWWWWWWWWWWWWWWO..",
+"..OWWWWWWWWWWWWWWWO...",
+"..OWWWWWWWWWWWWWWWO...",
+"...OWW..FF....FFWWO...",
+"...OW..FFFF..FFFFWO...",
+"....O..FFFF..FFFF.....",
+".......FFFF..FFFF.....",
+".......OKKO..OKKO.....",
+"........KK....KK......",
+]
+HIME_ANGRY = list(HIME)  # 発狂("ぴえん")顔差分: 顔部分だけ差し替え
+HIME_ANGRY[8]  = "...OHHFFFOFFFOFFHHO..."  # 眉間にシワ
+HIME_ANGRY[10] = "...OHHFftFFFFFtfHHO..."  # 涙目
+HIME_ANGRY[11] = "...OHHFFFFMMMMFFHHO..."  # 開いた口
+
 # ======================================================================
 def render(rows, pal):
     w, h = len(rows[0]), len(rows)
@@ -213,10 +309,15 @@ def to_b64(im):
     buf = io.BytesIO(); im.save(buf, 'PNG', optimize=True)
     return base64.b64encode(buf.getvalue()).decode()
 
-URARA_LEAN, MISONO_LEAN = 3, 5  # 傾き差分スプライットの最大シフト量(px, EPX後の等倍)
+def pixel_portrait(im, scale):
+    """ドット絵スプライットをカットイン/会話用に等倍拡大(NEARESTでブロック感を維持)"""
+    return im.resize((im.width*scale, im.height*scale), Image.NEAREST)
+
+URARA_LEAN, MISONO_LEAN, HIME_LEAN = 3, 5, 4  # 傾き差分スプライットの最大シフト量(px, EPX後の等倍)
 
 def build():
     urara_im, misono_im = epx(render(URARA, URARA_PAL)), epx(render(MISONO, MISONO_PAL))
+    hime_im, hime_angry_im = epx(render(HIME, HIME_PAL)), epx(render(HIME_ANGRY, HIME_PAL))
     sprites = {
         'urara':       lean(urara_im, 0, URARA_LEAN),
         'urara_left':  lean(urara_im, -URARA_LEAN, URARA_LEAN),
@@ -226,6 +327,14 @@ def build():
         'misono_right': lean(misono_im,  MISONO_LEAN, MISONO_LEAN),
         'zako':   epx(render(ZAKO,   ZAKO_PAL)),
         'zako2':  epx(render(ZAKO2,  ZAKO2_PAL)),
+        'chiuma': epx(render(CHIUMA, CHIUMA_PAL)),
+        'buta':   epx(render(BUTA,   BUTA_PAL)),
+        'hime':             lean(hime_im, 0, HIME_LEAN),
+        'hime_left':        lean(hime_im, -HIME_LEAN, HIME_LEAN),
+        'hime_right':       lean(hime_im,  HIME_LEAN, HIME_LEAN),
+        'hime_angry':       lean(hime_angry_im, 0, HIME_LEAN),
+        'hime_angry_left':  lean(hime_angry_im, -HIME_LEAN, HIME_LEAN),
+        'hime_angry_right': lean(hime_angry_im,  HIME_LEAN, HIME_LEAN),
     }
     outdir = ROOT / 'assets' / 'sprites'
     outdir.mkdir(parents=True, exist_ok=True)
@@ -241,6 +350,8 @@ def build():
         'MISONO_DEFEATED_PORTRAIT': portrait(ROOT/'assets/source/misono_defeated.png', 420),
         # うらら: ゲームオーバー会話用(悔しがる顔)
         'URARA_CRY_PORTRAIT': portrait(ROOT/'assets/source/urara_cry.png', 420),
+        # オタサーの姫: 写真ではなくドット絵そのものを会話用に拡大(等倍ブロック)
+        'HIME_PORTRAIT': pixel_portrait(hime_im, 6),
     }
     return sprites, ports
 
@@ -256,10 +367,19 @@ def inject(sprites, ports):
         'MISONO_SPRITE_RIGHT': to_b64(sprites['misono_right']),
         'ZAKO_SPRITE':   to_b64(sprites['zako']),
         'ZAKO2_SPRITE':  to_b64(sprites['zako2']),
+        'CHIUMA_SPRITE': to_b64(sprites['chiuma']),
+        'BUTA_SPRITE':   to_b64(sprites['buta']),
+        'HIME_SPRITE':             to_b64(sprites['hime']),
+        'HIME_SPRITE_LEFT':        to_b64(sprites['hime_left']),
+        'HIME_SPRITE_RIGHT':       to_b64(sprites['hime_right']),
+        'HIME_ANGRY_SPRITE':       to_b64(sprites['hime_angry']),
+        'HIME_ANGRY_SPRITE_LEFT':  to_b64(sprites['hime_angry_left']),
+        'HIME_ANGRY_SPRITE_RIGHT': to_b64(sprites['hime_angry_right']),
         'URARA_PORTRAIT':  to_b64(ports['URARA_PORTRAIT']),
         'MISONO_PORTRAIT': to_b64(ports['MISONO_PORTRAIT']),
         'MISONO_DEFEATED_PORTRAIT': to_b64(ports['MISONO_DEFEATED_PORTRAIT']),
         'URARA_CRY_PORTRAIT': to_b64(ports['URARA_CRY_PORTRAIT']),
+        'HIME_PORTRAIT': to_b64(ports['HIME_PORTRAIT']),
     }
     for name, b64 in mapping.items():
         pat = re.compile(name + r'="data:image/png;base64,[^"]+"')
