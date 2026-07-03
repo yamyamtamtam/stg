@@ -151,10 +151,11 @@ addEventListener("keydown", e=>{
   keys[e.key] = true;
   if(e.key==="Escape") togglePause();
   if(game.dialog && !e.repeat && (e.key==="z"||e.key==="Z")){ advanceDialog(); return; }
-  if(game.state==="title" && !e.repeat){
+  if(game.state==="difficulty" && !e.repeat){
     if(e.key==="ArrowLeft")  game.diff=clamp(game.diff-1,0,DIFF_NAMES.length-1);
     if(e.key==="ArrowRight") game.diff=clamp(game.diff+1,0,DIFF_NAMES.length-1);
   }
+  if(INTRO_ORDER.includes(game.state) && !e.repeat && (e.key==="z"||e.key==="Z")){ introAdvance(); return; }
   if(game.state!=="play" && (e.key==="z"||e.key==="Z")) startGame();
 });
 addEventListener("keyup", e=> keys[e.key]=false);
@@ -162,6 +163,15 @@ addEventListener("keyup", e=> keys[e.key]=false);
 //--- タッチ操作(スマホ): ドラッグで移動 / ダブルタップでボム / 2本指で低速 ---
 const IS_TOUCH = matchMedia("(pointer:coarse)").matches || "ontouchstart" in window;
 const touch = {active:false, slow:false, bomb:false, dx:0, dy:0, lastTap:0, lx:0, ly:0};
+// canvasはobject-fit:containで表示されるため、CSSボックスと実際の描画領域がズレる(上下/左右に余白ができる)。
+// クライアント座標→canvas座標の変換はそのズレを差し引く必要がある。
+function clientToCanvas(clientX, clientY){
+  const rect = cv.getBoundingClientRect();
+  const scale = Math.min(rect.width/W, rect.height/H);
+  const offX = rect.left + (rect.width - W*scale)/2;
+  const offY = rect.top + (rect.height - H*scale)/2;
+  return { x:(clientX-offX)/scale, y:(clientY-offY)/scale, scale };
+}
 cv.addEventListener("touchstart", e=>{
   e.preventDefault();
   const t=e.touches[0];
@@ -169,12 +179,12 @@ cv.addEventListener("touchstart", e=>{
   touch.active=true;
   touch.slow = e.touches.length>=2;
   if(game.state!=="play"){
-    if(game.state==="title"){
-      const rect=cv.getBoundingClientRect(), scale=W/rect.width;
-      const cx=(t.clientX-rect.left)*scale, cy=(t.clientY-rect.top)*scale;
+    if(game.state==="difficulty"){
+      const {x:cx,y:cy} = clientToCanvas(t.clientX, t.clientY);
       const chip=DIFF_CHIPS.find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
-      if(chip){ game.diff=chip.i; touch.lastTap=0; return; } // 難易度チップをタップ: 選択のみ(スタートはしない)
+      if(chip){ game.diff=chip.i; touch.lastTap=0; return; } // 難易度チップをタップ: 選択のみ(次へには進まない)
     }
+    if(INTRO_ORDER.includes(game.state)){ introAdvance(); touch.lastTap=0; return; }
     startGame(); touch.lastTap=0; return;
   }
   if(game.dialog){ advanceDialog(); touch.lastTap=0; return; }
@@ -185,9 +195,9 @@ cv.addEventListener("touchstart", e=>{
 cv.addEventListener("touchmove", e=>{
   e.preventDefault();
   const t=e.touches[0];
-  const scale = W / cv.getBoundingClientRect().width;
-  touch.dx += (t.clientX-touch.lx)*scale*1.15;
-  touch.dy += (t.clientY-touch.ly)*scale*1.15;
+  const { scale } = clientToCanvas(t.clientX, t.clientY);
+  touch.dx += (t.clientX-touch.lx)/scale*1.15;
+  touch.dy += (t.clientY-touch.ly)/scale*1.15;
   touch.lx=t.clientX; touch.ly=t.clientY;
   touch.slow = e.touches.length>=2;
 },{passive:false});
@@ -201,27 +211,86 @@ cv.addEventListener("touchend", e=>{
 // ゲーム全体の状態
 //----------------------------------------------------------------------
 const game = {
-  state:"title",       // title | play | over | clear
+  state:"title",       // title | scenario | difficulty | playerinfo | tutorial | play | over | clear
   paused:false,
   frame:0,
   score:0, hi:0,
   scroll:0,
   shake:0,
   diff:1,               // 難易度: 0=EASY 1=NORMAL 2=HARD 3=LUNATIC
+  tutIdx:0, tutTimer:0,  // 操作チュートリアル(自動再生)の進行
 };
 
 //--- 難易度設定(4段階): 弾速よりも弾密度/パターン数・敵HP・初期残機/ボム数で調整 ---
 const DIFF_NAMES        = ["EASY","NORMAL","HARD","LUNATIC"];
+const DIFF_SUBTITLE     = ["インターネット初心者","SNS中毒者","ドパガキ","手遅れ"];
 const DIFF_BULLET_SPEED = [0.9,   1.0,     1.05,  1.1];  // 弾速は控えめに
 const DIFF_DENSITY      = [0.6,   1.0,     1.35,  1.75]; // nway/ring等の弾数倍率
 const DIFF_HP           = [0.7,   1.0,     1.3,   1.7];
 const DIFF_LIVES        = [4,     3,       2,     2];
 const DIFF_BOMBS        = [4,     3,       2,     1];
-// タイトル画面の難易度選択チップ(タッチ当たり判定と描画で共有)
+// 難易度選択画面の選択チップ(タッチ当たり判定と描画で共有)
 const DIFF_CHIPS = DIFF_NAMES.map((name,i)=>({
-  name, i, w:100, h:28, y:H/2+2,
+  name, i, w:100, h:28, y:H/2-6,
   x: (W-(100*4+8*3))/2 + i*108,
 }));
+
+//----------------------------------------------------------------------
+// 開幕演出: タイトル→シナリオ選択→難易度選択→自機紹介→操作チュートリアル
+//----------------------------------------------------------------------
+const INTRO_ORDER = ["title","scenario","difficulty","playerinfo","tutorial"];
+const SCENARIOS = [
+  {name:"ホモガキミームの海", sub:"114514 connect."},
+];
+const TUTORIAL_STEPS_KB = [
+  {key:"矢印キー", desc:"移動"},
+  {key:"Z", desc:"ショット / 決定・会話送り"},
+  {key:"X", desc:"陽符(ボム)"},
+  {key:"Shift", desc:"低速移動(当たり判定表示)"},
+];
+const TUTORIAL_STEPS_TOUCH = [
+  {key:"ドラッグ", desc:"移動(自動ショット)"},
+  {key:"ダブルタップ", desc:"ボム"},
+  {key:"2本指タッチ", desc:"低速移動"},
+  {key:"タップ", desc:"スタート・会話送り"},
+];
+function introAdvance(){
+  const idx = INTRO_ORDER.indexOf(game.state);
+  if(idx===-1) return;
+  if(idx===INTRO_ORDER.length-1){ startGame(); return; }
+  game.state = INTRO_ORDER[idx+1];
+  if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; }
+}
+
+//--- タイトル画面のニコニコ動画風流れコメント ---
+const COMMENT_POOL = [
+  "888888888","うらら可愛い","みそのちゃん今日も辛口","初見です","この動画好き",
+  "wwwwwwwww","2145514","乙です","キタ━━━━(゚∀゚)━━━━!!","うぽつ",
+  "かわいい","912","こマ?","ファッ!?","おっつおっつ","陽キャで草","解説乙",
+];
+let comments = [], commentTimer = 0;
+function spawnComment(){
+  comments.push({
+    text: COMMENT_POOL[Math.floor(rand(0,COMMENT_POOL.length))],
+    y: rand(24, H-40), x: W+20, speed: rand(1.2,3.4),
+    color: ["#ffffff","#ffd76e","#7ee6a0","#ff8ab0","#8ad4ff"][Math.floor(rand(0,5))],
+    size: Math.floor(rand(12,18)),
+  });
+}
+function updateIntro(){
+  if(game.state==="title"){
+    if(--commentTimer<=0){ spawnComment(); commentTimer=rand(20,45); }
+    for(const c of comments) c.x -= c.speed;
+    comments = comments.filter(c=>c.x > -260);
+  }
+  if(game.state==="tutorial"){
+    const steps = IS_TOUCH ? TUTORIAL_STEPS_TOUCH : TUTORIAL_STEPS_KB;
+    if(++game.tutTimer > 90){
+      game.tutTimer=0; game.tutIdx++;
+      if(game.tutIdx>=steps.length) startGame();
+    }
+  }
+}
 
 const player = {
   x:W/2, y:H-80, r:2.5, grazeR:16,
@@ -1068,6 +1137,18 @@ function drawEffects(){
   ctx.globalAlpha=1;
 }
 
+function wrapCenterText(text, cx, startY, maxW, lineH){
+  ctx.textAlign="center";
+  let line="", y=startY; const lines=[];
+  for(const ch of text){
+    if(ctx.measureText(line+ch).width>maxW){ lines.push(line); line=ch; }
+    else line+=ch;
+  }
+  lines.push(line);
+  for(const l of lines){ ctx.fillText(l, cx, y); y+=lineH; }
+  return y;
+}
+
 function drawOverlay(){
   if(game.state==="play"&&!game.paused)return;
   ctx.fillStyle="rgba(5,3,12,0.75)"; ctx.fillRect(0,0,W,H);
@@ -1077,9 +1158,35 @@ function drawOverlay(){
     ctx.fillText("インターネット民俗STG",W/2,H/2-60);
     ctx.fillStyle="#8b7fb5"; ctx.font="12px sans-serif";
     ctx.fillText("〜 唯心論 vs 唯物論 〜",W/2,H/2-32);
-    // 難易度選択(4段階): EASY/NORMAL/HARD/LUNATIC
+    ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで次へ":"Z キーで次へ",W/2,H/2+60);
+    // ニコニコ動画風の流れコメント
+    ctx.textAlign="left";
+    for(const c of comments){
+      ctx.font=`bold ${c.size}px sans-serif`;
+      ctx.fillStyle="rgba(0,0,0,0.6)"; ctx.fillText(c.text, c.x+1, c.y+1);
+      ctx.fillStyle=c.color; ctx.fillText(c.text, c.x, c.y);
+    }
+  }
+  else if(game.state==="scenario"){
+    ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
+    ctx.fillText("シナリオ選択",W/2,H/2-130);
+    const sc = SCENARIOS[0];
+    const cw=300, ch=110, cx=(W-cw)/2, cy=H/2-70;
+    ctx.fillStyle="rgba(201,167,255,0.22)"; ctx.fillRect(cx,cy,cw,ch);
+    ctx.strokeStyle="#c9a7ff"; ctx.lineWidth=2; ctx.strokeRect(cx,cy,cw,ch); ctx.lineWidth=1;
+    ctx.fillStyle="#ffd76e"; ctx.font="bold 19px serif";
+    ctx.fillText(sc.name, W/2, cy+50);
+    ctx.fillStyle="#8b7fb5"; ctx.font="12px monospace";
+    ctx.fillText("- "+sc.sub+" -", W/2, cy+76);
     ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
-    ctx.fillText("DIFFICULTY",W/2,H/2-8);
+    ctx.fillText("(今はこのシナリオしか選べないよ)", W/2, cy+ch+22);
+    ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで次へ":"Z キーで次へ",W/2,H/2+110);
+  }
+  else if(game.state==="difficulty"){
+    ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
+    ctx.fillText("難易度選択",W/2,H/2-70);
     for(const c of DIFF_CHIPS){
       const sel = c.i===game.diff;
       ctx.fillStyle = sel ? "rgba(201,167,255,0.28)" : "rgba(255,255,255,0.05)";
@@ -1092,10 +1199,52 @@ function drawOverlay(){
       ctx.fillText(c.name, c.x+c.w/2, c.y+c.h/2+4);
     }
     ctx.lineWidth=1;
+    ctx.fillStyle="#ffd76e"; ctx.font="bold 13px sans-serif";
+    ctx.fillText("「"+DIFF_SUBTITLE[game.diff]+"」", W/2, H/2+42);
     ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
-    if(!IS_TOUCH) ctx.fillText("← → で難易度変更",W/2,H/2+48);
+    if(!IS_TOUCH) ctx.fillText("← → で難易度変更",W/2,H/2+64);
     ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
-    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップでスタート":"Z キーでスタート",W/2,H/2+72);
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで次へ":"Z キーで次へ",W/2,H/2+92);
+  }
+  else if(game.state==="playerinfo"){
+    ctx.fillStyle="#c9a7ff"; ctx.font="bold 16px sans-serif";
+    ctx.fillText("自機紹介",W/2,H*0.10);
+    if(imgUraraPortrait.complete && imgUraraPortrait.naturalWidth){
+      const scale=0.62, pw=imgUraraPortrait.naturalWidth*scale, ph=imgUraraPortrait.naturalHeight*scale;
+      ctx.drawImage(imgUraraPortrait, W/2-pw/2, H*0.13, pw, ph);
+    }
+    ctx.fillStyle="#ffd76e"; ctx.font="bold 18px serif";
+    ctx.fillText("神北うらら", W/2, H*0.62);
+    ctx.fillStyle="#e8e2f5"; ctx.font="12px sans-serif";
+    wrapCenterText("オタクに優しいインターネットと民俗学が大好きなギャルだよ〜〜", W/2, H*0.68, 320, 18);
+    ctx.fillStyle="#8ad4ff"; ctx.font="12px sans-serif";
+    ctx.fillText("ショット: 前方拡散型「陽キャのオーラ」", W/2, H*0.79);
+    ctx.fillStyle="#ff8ab0"; ctx.font="12px sans-serif";
+    ctx.fillText("ボム: 陽符「民俗学の灯」", W/2, H*0.79+22);
+    ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで次へ":"Z キーで次へ",W/2,H*0.94);
+  }
+  else if(game.state==="tutorial"){
+    const steps = IS_TOUCH ? TUTORIAL_STEPS_TOUCH : TUTORIAL_STEPS_KB;
+    const tip = steps[game.tutIdx % steps.length];
+    ctx.fillStyle="#c9a7ff"; ctx.font="bold 16px sans-serif";
+    ctx.fillText("操作方法", W/2, H/2-70);
+    const bw=240, bh=54, bx=(W-bw)/2, by=H/2-40;
+    ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(bx,by,bw,bh);
+    ctx.strokeStyle="#ffd76e"; ctx.strokeRect(bx,by,bw,bh);
+    ctx.fillStyle="#ffd76e"; ctx.font="bold 20px monospace";
+    ctx.fillText(tip.key, W/2, by+34);
+    ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
+    ctx.fillText(tip.desc, W/2, H/2+38);
+    const dotY=H/2+64, totalW=(steps.length-1)*18;
+    for(let i=0;i<steps.length;i++){
+      ctx.beginPath();
+      ctx.arc(W/2-totalW/2+i*18, dotY, i===game.tutIdx%steps.length?4:2.5, 0, TAU);
+      ctx.fillStyle = i===game.tutIdx%steps.length ? "#ffd76e" : "#4a4066";
+      ctx.fill();
+    }
+    ctx.fillStyle="#6f639b"; ctx.font="11px sans-serif";
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップでスキップ":"Z キーでスキップ", W/2, H/2+92);
   }
   else if(game.state==="over"){
     ctx.fillStyle="#ff5d7a"; ctx.font="bold 30px serif";
@@ -1166,9 +1315,9 @@ function drawBanner(){
   const a = t<30 ? t/30 : t>dur-40 ? Math.max(0,(dur-t)/40) : 1;
   ctx.save(); ctx.globalAlpha=a; ctx.textAlign="center";
   ctx.fillStyle="#7ee6a0"; ctx.font="bold 24px serif";
-  ctx.fillText("インターネットの森", W/2, H*0.34);
+  ctx.fillText(SCENARIOS[0].name, W/2, H*0.34);
   ctx.fillStyle="#8b7fb5"; ctx.font="12px monospace";
-  ctx.fillText("- InterNet meam's Forest -", W/2, H*0.34+26);
+  ctx.fillText("- "+SCENARIOS[0].sub+" -", W/2, H*0.34+26);
   ctx.restore(); ctx.textAlign="left";
 }
 
@@ -1282,7 +1431,7 @@ function togglePause(){
 
 function loop(){
   if(game.state==="play" && !game.paused) update();
-  else game.frame++;
+  else { game.frame++; updateIntro(); }
   render();
   requestAnimationFrame(loop);
 }
