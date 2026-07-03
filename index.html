@@ -143,6 +143,66 @@ const rand = (a,b)=>a+Math.random()*(b-a);
 const clamp = (v,a,b)=>v<a?a:v>b?b:v;
 
 //----------------------------------------------------------------------
+// SE(Web Audio APIによる8bit風プロシージャル合成。音源ファイル不要)
+//----------------------------------------------------------------------
+let actx = null;
+function ensureAudio(){
+  if(!actx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    actx = new AC();
+  }
+  if(actx.state==="suspended") actx.resume();
+  return actx;
+}
+// 矩形波/三角波の短音。freqEnd指定でピッチが滑らかに変化(8bit機のポルタメント風)
+function seTone(freq, dur, opt={}){
+  const ac = ensureAudio(); if(!ac) return;
+  const t0 = ac.currentTime + (opt.delay||0);
+  const osc = ac.createOscillator(), gain = ac.createGain();
+  osc.type = opt.wave || "square";
+  osc.frequency.setValueAtTime(freq, t0);
+  if(opt.freqEnd!=null) osc.frequency.exponentialRampToValueAtTime(Math.max(1,opt.freqEnd), t0+dur);
+  const vol = opt.vol ?? 0.15;
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(vol, t0+0.008);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  osc.connect(gain).connect(ac.destination);
+  osc.start(t0); osc.stop(t0+dur+0.02);
+}
+// ノイズバースト(被弾/爆発/ボム用)。減衰ホワイトノイズ+任意フィルタ
+function seNoise(dur, opt={}){
+  const ac = ensureAudio(); if(!ac) return;
+  const t0 = ac.currentTime + (opt.delay||0);
+  const n = Math.max(1, Math.floor(ac.sampleRate*dur));
+  const buf = ac.createBuffer(1, n, ac.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i=0;i<n;i++) data[i] = (Math.random()*2-1) * (1-i/n)**1.5;
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const gain = ac.createGain();
+  const vol = opt.vol ?? 0.15;
+  gain.gain.setValueAtTime(vol, t0);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  let node = src;
+  if(opt.filterFreq){
+    const filt = ac.createBiquadFilter();
+    filt.type = opt.filterType || "lowpass";
+    filt.frequency.value = opt.filterFreq;
+    node.connect(filt); node = filt;
+  }
+  node.connect(gain).connect(ac.destination);
+  src.start(t0);
+}
+const seShot        = ()=> seTone(880, 0.06, {wave:"square", freqEnd:640, vol:0.07});
+const seEnemyPop     = ()=>{ seTone(320, 0.11, {wave:"square", freqEnd:70, vol:0.12}); seNoise(0.08, {vol:0.08, filterFreq:2200, filterType:"bandpass"}); };
+const seHit          = ()=>{ seNoise(0.22, {vol:0.22, filterFreq:900, filterType:"lowpass"}); seTone(160, 0.22, {wave:"sawtooth", freqEnd:50, vol:0.14}); };
+const seBomb         = ()=>{ seTone(90, 0.7, {wave:"sawtooth", freqEnd:760, vol:0.16}); seNoise(0.7, {vol:0.12, filterFreq:1400, filterType:"lowpass"}); };
+const seItem         = ()=>{ seTone(660, 0.08, {wave:"square", vol:0.09}); seTone(990, 0.11, {wave:"square", vol:0.09, delay:0.06}); };
+const seGraze        = ()=> seTone(1500, 0.03, {wave:"square", vol:0.035});
+const seMenuMove     = ()=> seTone(440, 0.045, {wave:"square", vol:0.07});
+const seMenuConfirm  = ()=>{ seTone(660, 0.05, {wave:"square", vol:0.09}); seTone(880, 0.07, {wave:"square", vol:0.09, delay:0.05}); };
+
+//----------------------------------------------------------------------
 // 入力
 //----------------------------------------------------------------------
 const keys = {};
@@ -151,12 +211,12 @@ addEventListener("keydown", e=>{
   keys[e.key] = true;
   if(e.key==="Escape") togglePause();
   if(game.dialog && !e.repeat && (e.key==="z"||e.key==="Z")){ advanceDialog(); return; }
-  if(game.state==="difficulty" && !e.repeat){
-    if(e.key==="ArrowUp")   game.diff=clamp(game.diff-1,0,DIFF_NAMES.length-1);
-    if(e.key==="ArrowDown") game.diff=clamp(game.diff+1,0,DIFF_NAMES.length-1);
+  if(game.state==="difficulty" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
+    game.diff = clamp(game.diff + (e.key==="ArrowDown"?1:-1), 0, DIFF_NAMES.length-1);
+    seMenuMove();
   }
   if(INTRO_ORDER.includes(game.state) && !e.repeat && (e.key==="z"||e.key==="Z")){ introAdvance(); return; }
-  if(game.state!=="play" && (e.key==="z"||e.key==="Z")) startGame();
+  if(game.state!=="play" && (e.key==="z"||e.key==="Z")){ seMenuConfirm(); startGame(); }
 });
 addEventListener("keyup", e=> keys[e.key]=false);
 
@@ -185,7 +245,7 @@ cv.addEventListener("touchstart", e=>{
       if(chip){ game.diff=chip.i; introAdvance(); touch.lastTap=0; return; } // 難易度をタップしたら即次の画面へ
     }
     if(INTRO_ORDER.includes(game.state)){ introAdvance(); touch.lastTap=0; return; }
-    startGame(); touch.lastTap=0; return;
+    seMenuConfirm(); startGame(); touch.lastTap=0; return;
   }
   if(game.dialog){ advanceDialog(); touch.lastTap=0; return; }
   const now=performance.now();
@@ -261,6 +321,7 @@ const TUTORIAL_STEPS_TOUCH = [
 function introAdvance(){
   const idx = INTRO_ORDER.indexOf(game.state);
   if(idx===-1) return;
+  seMenuConfirm();
   if(idx===INTRO_ORDER.length-1){ keys["Shift"]=false; startGame(); return; }
   game.state = INTRO_ORDER[idx+1];
   if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; resetTutorialDemoStep(); }
@@ -351,6 +412,7 @@ const player = {
 };
 
 let pBullets=[], eBullets=[], enemies=[], items=[], effects=[], boss=null, cutIn=null;
+let grazeSoundFrame = -1; // 同一フレームで複数グレイズしても音は1回だけ鳴らす
 
 //======================================================================
 // エフェクト
@@ -658,7 +720,7 @@ function nextPhase(){
 function bossDefeated(){
   burst(boss.x,boss.y,"#ffd76e",60,7);
   burst(boss.x,boss.y,"#ff6e9c",60,5);
-  game.shake=20;
+  game.shake=20; seEnemyPop();
   addScore(50000);
   for(let i=0;i<12;i++) items.push(makeItem(boss.x+rand(-40,40), boss.y+rand(-30,30), i<4?"pow":"point"));
   boss=null;
@@ -728,6 +790,7 @@ function updatePlayer(){
   // ショット: パワー(取得したPアイテム量)で扇状に本数・角度が拡大
   if(!game.dialog && (keys["z"]||keys["Z"]||touch.active) && player.shotCd<=0){
     player.shotCd=4;
+    seShot();
     const tiers = Math.floor(player.power);              // 0..4
     const n = 1 + tiers*2;                               // 1,3,5,7,9本の扇
     const spread = (slow?0.35:1.0) * (0.22 + player.power*0.13); // 低速時は収束
@@ -746,7 +809,7 @@ function updatePlayer(){
   // ボム
   if(!game.dialog && (keys["x"]||keys["X"]||touch.bomb) && player.bombs>0 && player.bombTime<=0){
     player.bombs--; player.bombTime=120; player.invul=Math.max(player.invul,150);
-    game.shake=12;
+    game.shake=12; seBomb();
     cutIn = {t:0, dur:110, name:"陽符「民俗学の灯」", img:imgUraraPortrait, side:"left"};
   }
   touch.bomb=false;
@@ -762,6 +825,7 @@ function burstMaybe(b){ if(Math.random()<0.2) burst(b.x,b.y,b.color,3,1.5); }
 
 function playerHit(){
   if(player.invul>0||player.bombTime>0||!player.alive) return;
+  seHit();
   player.alive=false; player.respawn=60;
   player.lives--;
   player.power=Math.max(1,player.power-1);
@@ -824,6 +888,7 @@ function update(){
       e.dead=true; addScore(e.score); dropItems(e);
       burst(e.x,e.y,e.color,16,4);
       popText(e.x,e.y,"+"+e.score);
+      seEnemyPop();
     }
   }
   enemies=enemies.filter(e=>!e.dead && e.y<H+60 && e.y>-120 && e.x>-60 && e.x<W+60);
@@ -869,6 +934,7 @@ function update(){
       if(!b.grazed && d2 < (player.grazeR+b.r)**2 && d2 > (player.r+b.r)**2){
         b.grazed=true; game.graze=(game.graze||0)+1; addScore(50);
         burst(player.x,player.y,"#ffffff",2,2);
+        if(grazeSoundFrame!==game.frame){ grazeSoundFrame=game.frame; seGraze(); }
       }
       // 被弾
       if(d2 < (player.r+b.r)**2){ playerHit(); }
@@ -894,7 +960,7 @@ function update(){
       it.vy=Math.min(2.4,it.vy+0.08); it.y+=it.vy;
     }
     if(player.alive&&(it.x-player.x)**2+(it.y-player.y)**2<(it.r+10)**2){
-      it.got=true;
+      it.got=true; seItem();
       if(it.type==="pow"){
         if(player.power<4){
           const before=Math.floor(player.power);
