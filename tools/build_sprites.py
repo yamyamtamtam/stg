@@ -312,10 +312,6 @@ def to_b64(im):
     buf = io.BytesIO(); im.save(buf, 'PNG', optimize=True)
     return base64.b64encode(buf.getvalue()).decode()
 
-def pixel_portrait(im, scale):
-    """ドット絵スプライットをカットイン/会話用に等倍拡大(NEARESTでブロック感を維持)"""
-    return im.resize((im.width*scale, im.height*scale), Image.NEAREST)
-
 URARA_LEAN, MISONO_LEAN, HIME_LEAN = 3, 5, 4  # 傾き差分スプライットの最大シフト量(px, EPX後の等倍)
 
 def build():
@@ -353,8 +349,8 @@ def build():
         'MISONO_DEFEATED_PORTRAIT': portrait(ROOT/'assets/source/misono_defeated.png', 420),
         # うらら: ゲームオーバー会話用(悔しがる顔)
         'URARA_CRY_PORTRAIT': portrait(ROOT/'assets/source/urara_cry.png', 420),
-        # オタサーの姫: 写真ではなくドット絵そのものを会話用に拡大(等倍ブロック)
-        'HIME_PORTRAIT': pixel_portrait(hime_im, 6),
+        # オタサーの姫: 立ち絵をそのまま楕円ビネットでクロップ(会話・カットイン用)
+        'HIME_PORTRAIT': portrait(ROOT/'assets/source/hime_bust.png', 420),
     }
     return sprites, ports
 
