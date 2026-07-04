@@ -30,13 +30,16 @@
     - 開幕はチー牛と豚を召喚するのみ。2体を倒すと発狂(ぴえん顔)して本気の弾幕に
     - 姫符「男の人苦手なの、でも君とは話しやすい」/ 複数「チン騎士ファンネル」/ 円符「オタサーの姫」(チー牛・豚を再召喚して周回、撃破するまでダメージが通りにくい)
 - ボス戦前に会話パート、グレイズ・スペルカードカットインなど東方風システム一式
+- SEはWeb Audio APIによる8bit風プロシージャル合成(音源ファイル不要)、BGMはタイトル〜チュートリアル/道中/ボス戦(みそのとオタサーの姫で共通)の3曲を切替再生
 
 ## ファイル構成
 ```
 index.html              ゲーム本体(これ1つで完結)
 assets/source/          キャラ元絵(立ち絵・ドット化のリファレンス)
 assets/sprites/         生成済みドット絵(EPX適用後)
+assets/audio/           BGM音源(mp3。タイトル/道中/ボス戦)
 tools/build_sprites.py  ドット絵の再生成 & index.htmlへのbase64注入
+tools/build_audio.py    BGMのindex.htmlへのbase64注入
 ```
 
 ## 開発メモ
@@ -45,6 +48,10 @@ tools/build_sprites.py  ドット絵の再生成 & index.htmlへのbase64注入
   ```bash
   pip install pillow
   python3 tools/build_sprites.py --inject
+  ```
+- BGMを差し替えたら `assets/audio/bgm_{title,stage,boss}.mp3` を上書きして:
+  ```bash
+  python3 tools/build_audio.py
   ```
 - index.html 内の主なセクション: 入力(キー/タッチ) → 弾ヘルパー(shot/nway/ring) →
   雑魚AI(zakoAI) → ステージタイムライン(buildStage) → 会話(DIALOG) → ボス(spells) →
