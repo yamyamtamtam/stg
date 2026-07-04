@@ -151,7 +151,7 @@ const spells = [
     },
   },
   {
-    name:"病符「私がいなくなってもみんな困らんだ…」", hp:480, time:2000, spell:true,
+    name:"病符「私がいなくなってもみんな困らないんだ…」", hp:480, time:2000, spell:true,
     fire(b){
       // 発狂後の苛烈な弾幕: 高密度リング+自機狙いの扇
       if(b.t%50===0) ring(b.x,b.y,20,1.8,b.t*0.02,{color:"#ff8ab0",r:4});
