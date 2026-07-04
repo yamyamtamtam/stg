@@ -1,33 +1,72 @@
 # CLAUDE.md — プロジェクトコンテキスト
 
 ## 概要
-東方風の弾幕STG「インターネット民俗STG」。**index.html 単体で完結**する構成
-(CSS/JS/画像すべて埋め込み)。ビルド工程なし、ブラウザで開けば動く。
+東方風の弾幕STG「インターネット民俗STG」。ビルド工程なしの素のHTML+JS。
+classic `<script src>` の読み込み順だけで動く(file://でもGitHub Pagesでも可)。
 
-## アーキテクチャ(index.html 内)
-- `<script>` 1本目: base64画像定数(URARA_SPRITE / MISONO_SPRITE / ZAKO_SPRITE /
-  ZAKO2_SPRITE / URARA_PORTRAIT / MISONO_PORTRAIT)
-- `<script>` 2本目: ゲーム本体。60fps requestAnimationFrame。主な構成:
-  - 入力: `keys{}`(キーボード) / `touch{}`(タッチ。ドラッグ移動・ダブルタップボム・2本指低速)
-  - 弾: `shot()/nway()/ring()`。opt で `moon`(三日月弾) `word`(文字弾) `seq`(114514数字弾)
-    `accel/turn` を指定
-  - 雑魚: `zakoAI.{diver,crosser,swirler,fortress}`。fortress は単語弾の扇を撃つ中型機
-  - ステージ: `buildStage()` がタイムライン(`at(frame,fn)`)を構築。2150fで会話→ボス
-  - 会話: `DIALOG` 配列 + `drawDialog()`。`game.dialog` が非nullの間ゲーム進行停止
-  - ボス: `spells` 配列(通常+スペカ3枚)。カットインは `cutIn` オブジェクト(side:left/right)
-  - 自機: 扇状ショット(パワー1.0-4.0で1/3/5/7/9本)。スマホオプション2台(slowLerpで横⇔前方)
-  - 描画: drawBG(01レイン+グリッチ) → 敵/ボス(浮遊カード) → 自機 → 弾 → バナー/カットイン/HUD/会話
+## ファイル構成と読み込み順(index.html に定義)
+1. `js/gen/sprites.js` — **自動生成**。base64画像 `SPRITE_SRC` と `IMG.<KEY>`(Image化済み)。手で編集しない
+2. `js/gen/audio.js` — **自動生成**。BGM base64 `BGM_SRC.{TITLE,STAGE,BOSS}`。手で編集しない
+3. `js/engine.js` — 共通エンジン(下記)
+4. `js/scenarios/scenario*.js` — 各シナリオ。IIFEで包み `registerScenario()` で登録
+5. `js/main.js` — シナリオ選択カード確定 + `loop()` 起動
+
+CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグローバル字句スコープを
+共有する(classic script)ので、エンジンの関数・変数はシナリオファイルからそのまま使える。
+シナリオファイル内部はIIFEでローカル化し、名前衝突を防ぐこと。
+
+## js/engine.js の構成
+- 入力: `keys{}`(キーボード) / `touch{}`(タッチ。ドラッグ移動・ダブルタップボム・2本指低速)
+- 弾: `shot()/nway()/ring()`。opt で `moon`(三日月弾) `word`(文字弾) `seq`(114514数字弾)
+  `accel/turn` を指定
+- 汎用雑魚AI: `zakoAI.{diver,crosser,swirler}`。シナリオ固有AIは各シナリオファイルが
+  `zakoAI.xxx = function(e){...}` で追加(fortress→シナリオ1、chiuma/buta→シナリオ2)
+- ステージ: `at(frame,fn)` でタイムライン構築。2150fで `startDialogue`(会話→ボス)が通例
+- 会話: `game.dialog` が非nullの間ゲーム進行停止。`DIALOG_OVER`(ゲームオーバー)のみエンジン側
+- ボス進行: `nextPhase()` がスペル配列を順に消化。スペル要素のフック:
+  - `fire(b)` 毎フレーム / `onStart(b)` フェーズ開始時(召喚など) /
+    `checkAdvance(b)` trueを返すとHP残でも次フェーズへ(例: 召喚全滅で発狂)
+  - `summonTag` 付きの敵が生存中はボスへのダメージが0.12倍(エンジン共通機構)
+- 自機: 扇状ショット(パワー1.0-4.0で1/3/5/7/9本)。スマホオプション2台(slowLerpで横⇔前方)
+- 描画: drawBG(01レイン+グリッチ) → 敵(e.sprite優先) → ボス(浮遊カード) → 自機 → 弾 →
+  バナー/カットイン/HUD/会話。敵・ボスのスプライト/立ち絵はシナリオ定義から引く
+- SE: Web Audio APIの8bit風プロシージャル合成。BGM: `updateBgm()` がstate/bossで自動切替
+
+## シナリオの追加手順(1日1シナリオ運用)
+1. `js/scenarios/scenarioN_xxx.js` を新規作成。既存2ファイルが実例で、契約は:
+   ```js
+   registerScenario({
+     name, sub,                    // 選択画面・道中バナー表示
+     buildStage(),                 // at()でタイムライン構築。最後に at(2150, startDialogue)
+     dialogPre, dialogPost,        // [{who, text}, ...]
+     boss: {
+       name,
+       spells,                     // [{name, hp, time, spell, fire(b), onStart?, checkAdvance?}]
+       sprite(b),                  // 弾幕中ドット絵(b.dir/b.enragedで差分)
+       cutIn,                      // スペカカットイン立ち絵(IMG.XXX)
+       dialog(set),                // 会話立ち絵 {img, scale, margin, bottom}("pre"/"post")
+     },
+   });
+   ```
+2. `index.html` の `js/main.js` より前に `<script>` タグを1行追加
+3. 新スプライトが要る場合は `tools/build_sprites.py` にピクセルマップ/立ち絵を追加して
+   `--inject` → `IMG.<定数名>` で参照。敵定義に `sprite: IMG.XXX` を渡すと雑魚の絵になる
 
 ## アセットパイプライン
 - ドット絵: `tools/build_sprites.py` 内のピクセルマップ(文字列アート)が原本。
   render → EPX(Scale2x で角を斜め補間=丸み) → PNG
-- 立ち絵: assets/source/ の元絵を αトリム→クロップ(みそのは上70%)→縮小→255色減色
-- **画像を変更したら** `python3 tools/build_sprites.py --inject` で index.html に再注入
-- assets/sprites/ は生成物のプレビュー用。ゲームは index.html 内の base64 を参照する
+- 立ち絵: assets/source/ の元絵を αトリム→クロップ→縮小→255色減色。
+  背景透過pngが手に入る場合はそれを使い輪郭に沿った切り抜きにする(不透明背景からの
+  自前セグメンテーションは苦戦するので避け、ユーザーに透過版をもらう)
+- **画像を変更したら** `python3 tools/build_sprites.py --inject`(js/gen/sprites.js を再生成)
+- BGM: `assets/audio/bgm_{title,stage,boss}.mp3` → `python3 tools/build_audio.py`
+  (js/gen/audio.js を再生成)
+- assets/sprites/ は生成物のプレビュー用。ゲームは js/gen/sprites.js の base64 を参照する
 
 ## 規約・注意
 - 描画はドット絵部分で `imageSmoothingEnabled=false` + 整数座標(Math.round)
 - 敵弾の当たり判定は円(b.r)。月弾/文字弾は見た目の方が大きい(プレイヤー有利)に統一
-- 会話・カットイン等のテキストは日本語。キャラ名: 神北うらら(自機)/棗みその(ボス)
-- 変更後は `node --check` 相当の構文確認と、ブラウザでタイトル→ステージ→会話→ボス撃破
-  まで通しで確認すること
+- 会話・カットイン等のテキストは日本語。自機: 神北うらら
+- js/gen/ の2ファイルは巨大base64行を含む。**直接Read/Editしない**(必ずtoolsで再生成)
+- 変更後は全jsを `node --check` で構文確認し、ブラウザ(Playwright可)でタイトル→シナリオ選択
+  →ステージ→会話→ボス撃破→クリアまで通しで確認すること

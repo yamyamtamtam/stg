@@ -1,6 +1,6 @@
 # インターネット民俗STG 〜唯心論 vs 唯物論〜
 
-東方Projectライクな縦スクロール弾幕STG。**単一HTMLファイル**(依存ライブラリなし・画像はbase64埋め込み)で動作します。
+東方Projectライクな縦スクロール弾幕STG。依存ライブラリ・ビルド工程なしの素のHTML+JSで動作します(`index.html` をブラウザで開くだけ。file://でもGitHub Pagesでも可)。
 
 ## 遊び方
 
@@ -34,13 +34,28 @@
 
 ## ファイル構成
 ```
-index.html              ゲーム本体(これ1つで完結)
-assets/source/          キャラ元絵(立ち絵・ドット化のリファレンス)
-assets/sprites/         生成済みドット絵(EPX適用後)
-assets/audio/           BGM音源(mp3。タイトル/道中/ボス戦)
-tools/build_sprites.py  ドット絵の再生成 & index.htmlへのbase64注入
-tools/build_audio.py    BGMのindex.htmlへのbase64注入
+index.html                  エントリポイント(マークアップ+scriptタグの読み込み順定義のみ)
+css/style.css               スタイル
+js/engine.js                共通エンジン(入力/自機/弾/敵/描画/会話/ボス進行/シナリオレジストリ)
+js/scenarios/scenario1_homogaki.js  シナリオ1「ホモガキミームの海」(道中+みその一式)
+js/scenarios/scenario2_otasa.js     シナリオ2「オタサーの森」(チー牛/豚+姫一式)
+js/main.js                  起動(シナリオ登録確定+メインループ開始)
+js/gen/sprites.js           自動生成: ドット絵/立ち絵のbase64(手で編集しない)
+js/gen/audio.js             自動生成: BGMのbase64(手で編集しない)
+assets/source/              キャラ元絵(立ち絵・ドット化のリファレンス)
+assets/sprites/             生成済みドット絵のプレビュー(EPX適用後)
+assets/audio/               BGM音源(mp3。タイトル/道中/ボス戦)
+tools/build_sprites.py      ドット絵の再生成 → js/gen/sprites.js を書き出し
+tools/build_audio.py        BGM → js/gen/audio.js を書き出し
 ```
+
+## シナリオの追加方法
+1. `js/scenarios/scenarioN_xxx.js` を作る(既存の2ファイルが実例。IIFEで包んで最後に `registerScenario({...})`)
+   - 契約: `{name, sub, buildStage(), dialogPre, dialogPost, boss:{name, spells, sprite(b), cutIn, dialog(set)}}`
+   - 専用の雑魚AIは `zakoAI.xxx = function(e){...}` でファイル内から拡張できる
+2. `index.html` の `js/main.js` より前に `<script src="js/scenarios/scenarioN_xxx.js"></script>` を1行追加
+3. 新キャラのドット絵/立ち絵が要る場合は `tools/build_sprites.py` にピクセルマップ等を追加して
+   `python3 tools/build_sprites.py --inject` → コード側からは `IMG.<定数名>` で参照
 
 ## 開発メモ
 - ドット絵はピクセルマップ(文字列)→ PNG → EPX(Scale2x)で丸み付与、という工程で生成
@@ -53,7 +68,7 @@ tools/build_audio.py    BGMのindex.htmlへのbase64注入
   ```bash
   python3 tools/build_audio.py
   ```
-- index.html 内の主なセクション: 入力(キー/タッチ) → 弾ヘルパー(shot/nway/ring) →
-  雑魚AI(zakoAI) → ステージタイムライン(buildStage) → 会話(DIALOG) → ボス(spells) →
+- js/engine.js の主なセクション: 入力(キー/タッチ) → 弾ヘルパー(shot/nway/ring) →
+  汎用雑魚AI(zakoAI) → ステージタイムライン(at/buildStage) → 会話 → ボス進行(nextPhase) →
   描画(drawBG/drawPlayer/drawBoss/drawBullets/drawDialog...)
-- GitHub Pages にそのままデプロイ可能(単一ファイルなので Settings → Pages → main を指定するだけ)
+- GitHub Pages にそのままデプロイ可能(静的ファイルのみ。Settings → Pages でブランチを指定するだけ)
