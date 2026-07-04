@@ -137,8 +137,15 @@ addEventListener("keydown", e=>{
     game.scenario = clamp(game.scenario + (e.key==="ArrowDown"?1:-1), 0, SCENARIOS.length-1);
     seMenuMove();
   }
+  if((game.state==="over"||game.state==="clear") && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
+    game.endSel = clamp(game.endSel + (e.key==="ArrowDown"?1:-1), 0, END_CHIPS.length-1);
+    seMenuMove();
+  }
   if(INTRO_ORDER.includes(game.state) && !e.repeat && (e.key==="z"||e.key==="Z")){ introAdvance(); return; }
-  if(game.state!=="play" && (e.key==="z"||e.key==="Z")){ seMenuConfirm(); startGame(); }
+  if((game.state==="over"||game.state==="clear") && !e.repeat && (e.key==="z"||e.key==="Z")){
+    seMenuConfirm();
+    if(game.endSel===0) startGame(); else backToTitle();
+  }
 });
 addEventListener("keyup", e=> keys[e.key]=false);
 
@@ -173,6 +180,13 @@ cv.addEventListener("touchstart", e=>{
       if(chip){ game.scenario=chip.i; introAdvance(); touch.lastTap=0; return; } // シナリオをタップしたら即次の画面へ
     }
     if(INTRO_ORDER.includes(game.state)){ introAdvance(); touch.lastTap=0; return; }
+    if(game.state==="over"||game.state==="clear"){
+      // エンドメニュー(もう一度やる/タイトルに戻る)のボタンタップのみ反応
+      const {x:cx,y:cy} = clientToCanvas(t.clientX, t.clientY);
+      const chip=END_CHIPS.find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
+      if(chip){ seMenuConfirm(); if(chip.i===0) startGame(); else backToTitle(); }
+      touch.lastTap=0; return;
+    }
     seMenuConfirm(); startGame(); touch.lastTap=0; return;
   }
   if(game.dialog){ advanceDialog(); touch.lastTap=0; return; }
@@ -209,6 +223,7 @@ const game = {
   scenario:0,           // シナリオ: 0=ホモガキミームの海 1=オタサーの森
   tutIdx:0, tutTimer:0,  // 操作チュートリアル(自動再生)の進行
   overPending:false,     // ゲームオーバー会話が進行中/予約済み(ボス撃破会話に上書きされないようにする)
+  endSel:0,              // クリア/ゲームオーバー画面のメニュー選択: 0=もう一度やる 1=タイトルに戻る
 };
 
 //--- 難易度設定(4段階): 弾速よりも弾密度/パターン数・敵HP・初期残機/ボム数で調整 ---
@@ -226,6 +241,19 @@ const DIFF_CHIPS = DIFF_NAMES.map((name,i)=>({
   x: (W-320)/2,
   y: (H/2 - ((DIFF_ROW_H+DIFF_ROW_GAP)*DIFF_NAMES.length-DIFF_ROW_GAP)/2) + i*(DIFF_ROW_H+DIFF_ROW_GAP),
 }));
+
+// クリア/ゲームオーバー画面のメニュー(縦一列。タッチ当たり判定と描画で共有)
+const END_MENU = ["もう一度やる","タイトルに戻る"];
+const END_ROW_H = 44, END_ROW_GAP = 10, END_ROW_W = 220;
+const END_CHIPS = END_MENU.map((name,i)=>({
+  name, i, w:END_ROW_W, h:END_ROW_H,
+  x: (W-END_ROW_W)/2,
+  y: H/2 + 4 + i*(END_ROW_H+END_ROW_GAP),
+}));
+function backToTitle(){
+  game.state="title";
+  comments=[]; commentTimer=0; // タイトルの流れコメントを初期化
+}
 
 //----------------------------------------------------------------------
 // 開幕演出: タイトル→シナリオ選択→難易度選択→自機紹介→操作チュートリアル
@@ -478,8 +506,8 @@ function advanceDialog(){
   if(game.dialog.idx>=list.length){
     const set = game.dialog.set;
     game.dialog=null;
-    if(set==="post"){ if(game.state==="play") game.state="clear"; }
-    else if(set==="over"){ game.state="over"; }
+    if(set==="post"){ if(game.state==="play"){ game.state="clear"; game.endSel=0; } }
+    else if(set==="over"){ game.state="over"; game.endSel=0; }
     else spawnBoss();
   }
 }
@@ -1077,6 +1105,24 @@ function wrapCenterText(text, cx, startY, maxW, lineH){
   return y;
 }
 
+// クリア/ゲームオーバー画面の縦並びメニュー(もう一度やる/タイトルに戻る)。
+// キーボードでは選択中の項目を金色で強調する(タップは直接どちらかを押す)
+function drawEndMenu(){
+  for(const c of END_CHIPS){
+    const active = c.i===game.endSel;
+    ctx.fillStyle = active ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.10)";
+    ctx.fillRect(c.x,c.y,c.w,c.h);
+    ctx.strokeStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.lineWidth = 1;
+    ctx.strokeRect(c.x,c.y,c.w,c.h);
+    ctx.fillStyle = active ? "#ffd76e" : "#e8e2f5"; ctx.font = "bold 15px sans-serif"; ctx.textAlign="center";
+    ctx.fillText(c.name, c.x+c.w/2, c.y+28);
+  }
+  ctx.lineWidth=1;
+  const bottom = END_CHIPS[END_CHIPS.length-1].y + END_ROW_H;
+  ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
+  if(!IS_TOUCH) ctx.fillText("↑ ↓ で選択 / Z で決定", W/2, bottom+22);
+}
+
 function drawOverlay(){
   if(game.state==="play"&&!game.paused)return;
   ctx.fillStyle="rgba(5,3,12,0.75)"; ctx.fillRect(0,0,W,H);
@@ -1180,17 +1226,17 @@ function drawOverlay(){
   }
   else if(game.state==="over"){
     ctx.fillStyle="#ff5d7a"; ctx.font="bold 30px serif";
-    ctx.fillText("GAME OVER",W/2,H/2-30);
+    ctx.fillText("GAME OVER",W/2,H/2-64);
     ctx.fillStyle="#e8e2f5"; ctx.font="13px sans-serif";
-    ctx.fillText("SCORE: "+game.score.toLocaleString(),W/2,H/2+8);
-    ctx.fillText(IS_TOUCH?"タップでリトライ":"Z キーでリトライ",W/2,H/2+40);
+    ctx.fillText("SCORE: "+game.score.toLocaleString(),W/2,H/2-28);
+    drawEndMenu();
   }
   else if(game.state==="clear"){
     ctx.fillStyle="#ffd76e"; ctx.font="bold 28px serif";
-    ctx.fillText("STAGE CLEAR!",W/2,H/2-30);
+    ctx.fillText("STAGE CLEAR!",W/2,H/2-64);
     ctx.fillStyle="#e8e2f5"; ctx.font="13px sans-serif";
-    ctx.fillText("SCORE: "+game.score.toLocaleString(),W/2,H/2+8);
-    ctx.fillText(IS_TOUCH?"タップでもう一周":"Z キーでもう一周",W/2,H/2+40);
+    ctx.fillText("SCORE: "+game.score.toLocaleString(),W/2,H/2-28);
+    drawEndMenu();
   }
   else if(game.paused){
     ctx.fillStyle="#e8e2f5"; ctx.font="bold 22px sans-serif";
