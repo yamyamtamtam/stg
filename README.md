@@ -1,4 +1,4 @@
-# インターネット民俗STG 〜唯心論 vs 唯物論〜
+# インターネット民俗STG
 
 東方Projectライクな縦スクロール弾幕STG。依存ライブラリ・ビルド工程なしの素のHTML+JSで動作します(`index.html` をブラウザで開くだけ。file://でもGitHub Pagesでも可)。
 

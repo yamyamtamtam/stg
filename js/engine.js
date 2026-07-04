@@ -1130,8 +1130,6 @@ function drawOverlay(){
   if(game.state==="title"){
     ctx.fillStyle="#c9a7ff"; ctx.font="bold 27px serif";
     ctx.fillText("インターネット民俗STG",W/2,H/2-60);
-    ctx.fillStyle="#8b7fb5"; ctx.font="12px sans-serif";
-    ctx.fillText("〜 唯心論 vs 唯物論 〜",W/2,H/2-32);
     ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
     if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで次へ":"Z キーで次へ",W/2,H/2+60);
     // ニコニコ動画風の流れコメント
