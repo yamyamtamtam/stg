@@ -85,7 +85,7 @@ const spells = [
 ];
 
 registerScenario({
-  name:"シンギュラリティ", sub:"最終鬼畜獄滅",
+  name:"シンギュラリティ", // サブタイトルなし(選択カードもタイトルのみ)
   // シナリオ専用の難易度二択(名前はUTF-8バイト列の16進表記)
   diffOptions: [
     {name:"E4BABAE99693E794A8", sub:"人間用"},

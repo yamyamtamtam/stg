@@ -1198,9 +1198,12 @@ function drawOverlay(){
       ctx.strokeStyle = "#8b7fb5"; ctx.lineWidth = 1;
       ctx.strokeRect(c.x,c.y,c.w,c.h);
       ctx.fillStyle = "#e8e2f5"; ctx.font = "bold 17px serif";
-      ctx.fillText(c.sc.name, c.x+c.w/2, c.y+28);
-      ctx.fillStyle = "#8b7fb5"; ctx.font = "11px monospace";
-      ctx.fillText("- "+c.sc.sub+" -", c.x+c.w/2, c.y+48);
+      // サブタイトルなしのシナリオはタイトルをカード中央(縦)に1行だけ表示
+      ctx.fillText(c.sc.name, c.x+c.w/2, c.sc.sub ? c.y+28 : c.y+38);
+      if(c.sc.sub){
+        ctx.fillStyle = "#8b7fb5"; ctx.font = "11px monospace";
+        ctx.fillText("- "+c.sc.sub+" -", c.x+c.w/2, c.y+48);
+      }
     }
     ctx.lineWidth=1;
     ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
@@ -1348,8 +1351,10 @@ function drawBanner(){
   ctx.save(); ctx.globalAlpha=a; ctx.textAlign="center";
   ctx.fillStyle="#7ee6a0"; ctx.font="bold 24px serif";
   ctx.fillText(sc.name, W/2, H*0.34);
-  ctx.fillStyle="#8b7fb5"; ctx.font="12px monospace";
-  ctx.fillText("- "+sc.sub+" -", W/2, H*0.34+26);
+  if(sc.sub){
+    ctx.fillStyle="#8b7fb5"; ctx.font="12px monospace";
+    ctx.fillText("- "+sc.sub+" -", W/2, H*0.34+26);
+  }
   ctx.restore(); ctx.textAlign="left";
 }
 
