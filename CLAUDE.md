@@ -39,6 +39,8 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
    ```js
    registerScenario({
      name, sub,                    // 選択画面・道中バナー表示
+     diffOptions,                  // 任意: [{name,sub},...] で難易度選択をシナリオ専用の選択肢に差し替え
+                                   // (game.diffがそのindexになる。シナリオ4の人間用/AI用二択が実例)
      buildStage(),                 // at()でタイムライン構築。最後に at(2150, startDialogue)
      dialogPre, dialogPost,        // [{who, text}, ...]
      boss: {

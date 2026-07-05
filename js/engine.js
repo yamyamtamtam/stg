@@ -132,7 +132,7 @@ addEventListener("keydown", e=>{
   if(e.key==="Escape") togglePause();
   if(game.dialog && !e.repeat && (e.key==="z"||e.key==="Z")){ advanceDialog(); return; }
   if(game.state==="difficulty" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
-    game.diff = clamp(game.diff + (e.key==="ArrowDown"?1:-1), 0, DIFF_NAMES.length-1);
+    game.diff = clamp(game.diff + (e.key==="ArrowDown"?1:-1), 0, diffCount()-1);
     seMenuMove();
   }
   if(game.state==="scenario" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
@@ -173,7 +173,7 @@ cv.addEventListener("touchstart", e=>{
   if(game.state!=="play"){
     if(game.state==="difficulty"){
       const {x:cx,y:cy} = clientToCanvas(t.clientX, t.clientY);
-      const chip=DIFF_CHIPS.find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
+      const chip=diffChips().find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
       if(chip){ game.diff=chip.i; introAdvance(); touch.lastTap=0; return; } // 難易度をタップしたら即次の画面へ
     }
     if(game.state==="scenario"){
@@ -243,6 +243,23 @@ const DIFF_CHIPS = DIFF_NAMES.map((name,i)=>({
   x: (W-320)/2,
   y: (H/2 - ((DIFF_ROW_H+DIFF_ROW_GAP)*DIFF_NAMES.length-DIFF_ROW_GAP)/2) + i*(DIFF_ROW_H+DIFF_ROW_GAP),
 }));
+// シナリオが diffOptions([{name, sub}, ...])を定義していると難易度選択がその内容に差し替わる
+// (例: シナリオ4の人間用/AI用二択)。game.diff はその配列のインデックスになり、
+// DIFF_BULLET_SPEED 等の共通テーブルも同じインデックスで引かれる
+function diffOptions(){
+  const sc = SCENARIOS[game.scenario];
+  return (sc && sc.diffOptions) || null;
+}
+function diffCount(){ const o = diffOptions(); return o ? o.length : DIFF_NAMES.length; }
+function diffChips(){
+  const o = diffOptions();
+  if(!o) return DIFF_CHIPS;
+  return o.map((d,i)=>({
+    name:d.name, sub:d.sub, i, w:320, h:DIFF_ROW_H,
+    x: (W-320)/2,
+    y: (H/2 - ((DIFF_ROW_H+DIFF_ROW_GAP)*o.length-DIFF_ROW_GAP)/2) + i*(DIFF_ROW_H+DIFF_ROW_GAP),
+  }));
+}
 
 // クリア/ゲームオーバー画面のメニュー(縦一列。タッチ当たり判定と描画で共有)
 const END_MENU = ["もう一度やる","タイトルに戻る"];
@@ -288,6 +305,7 @@ function introAdvance(){
   seMenuConfirm();
   if(idx===INTRO_ORDER.length-1){ keys["Shift"]=false; startGame(); return; }
   game.state = INTRO_ORDER[idx+1];
+  if(game.state==="difficulty") game.diff = clamp(game.diff, 0, diffCount()-1); // シナリオ専用難易度は選択肢数が違う
   if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; resetTutorialDemoStep(); }
 }
 function resetTutorialDemoStep(){
@@ -1041,7 +1059,8 @@ function drawPlayerBullets(){
 
 function drawEnemyBullets(){
   // 敵弾: 単語弾 / 三日月(ボス) / 縁取り丸(+数字)。アイテムと見分けやすいよう薄くブラーをかける
-  ctx.filter="blur(0.7px)";
+  // (弾数が多い時はブラーが重くなるので無効化する: シンギュラリティ弾幕等の対策)
+  ctx.filter = eBullets.length>500 ? "none" : "blur(0.7px)";
   for(const b of eBullets){
     if(b.sprite){
       // スプライト弾(コイン・チケット等): spin指定でくるくる回転、0なら進行方向を向く
@@ -1176,10 +1195,11 @@ function drawOverlay(){
     if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで決定":"Z キーで決定",W/2,listBottom+(IS_TOUCH?26:46));
   }
   else if(game.state==="difficulty"){
-    const listTop = DIFF_CHIPS[0].y, listBottom = DIFF_CHIPS[DIFF_CHIPS.length-1].y+DIFF_CHIPS[0].h;
+    const chips = diffChips(); // シナリオ専用の難易度(diffOptions)があればそちらを表示
+    const listTop = chips[0].y, listBottom = chips[chips.length-1].y+chips[0].h;
     ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
     ctx.fillText("難易度選択",W/2,listTop-30);
-    for(const c of DIFF_CHIPS){
+    for(const c of chips){
       // 全項目を同じ透過率・色・太さで統一表示する
       ctx.fillStyle = "rgba(255,255,255,0.14)";
       ctx.fillRect(c.x,c.y,c.w,c.h);
@@ -1188,7 +1208,7 @@ function drawOverlay(){
       ctx.fillStyle = "#e8e2f5"; ctx.font = "bold 15px monospace";
       ctx.fillText(c.name, c.x+c.w/2, c.y+24);
       ctx.fillStyle = "#8b7fb5"; ctx.font = "11px sans-serif";
-      ctx.fillText("「"+DIFF_SUBTITLE[c.i]+"」", c.x+c.w/2, c.y+42);
+      ctx.fillText("「"+(c.sub ?? DIFF_SUBTITLE[c.i])+"」", c.x+c.w/2, c.y+42);
     }
     ctx.lineWidth=1;
     ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
@@ -1343,11 +1363,12 @@ function drawDialog(){
     }
   }else{
     // 話者を後に描いて手前に出す。ボス立ち絵の画像/配置はシナリオ定義から取得
+    // (bd.solo が真ならボス単独の演出: うららの立ち絵を出さない)
     const bd = curScenario().boss.dialog(game.dialog.set);
     const ports = [
-      [IMG.URARA_PORTRAIT, true,  uraraTurn,  0.85, 8,  108],
       [bd.img, false, !uraraTurn, bd.scale, bd.margin, bd.bottom],
     ];
+    if(!bd.solo) ports.push([IMG.URARA_PORTRAIT, true, uraraTurn, 0.85, 8, 108]);
     ports.sort((a,b)=>(a[2]?1:0)-(b[2]?1:0));
     for(const p of ports) drawP(...p);
   }
@@ -1374,7 +1395,8 @@ function drawDialog(){
 
 function drawDifficultyBadge(){
   if(game.state!=="play") return;
-  const label = DIFF_NAMES[game.diff];
+  const opts = diffOptions();
+  const label = opts ? opts[game.diff].name : DIFF_NAMES[game.diff];
   ctx.save();
   ctx.font="bold 10px monospace"; ctx.textAlign="left";
   const tw = ctx.measureText(label).width;
