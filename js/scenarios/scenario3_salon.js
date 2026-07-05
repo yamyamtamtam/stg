@@ -41,29 +41,71 @@ function makeTicket(){
 }
 const TICKET = makeTicket();
 
-// ワナビー男: お金弾(回転するコイン)を撃つ
-zakoAI.wannabeM = function(e){
-  if(e.vx!==undefined){
-    e.x += e.vx; e.y += Math.sin(e.t*0.05)*0.8;
-    if(e.t%50===20) shot(e.x,e.y,aimAt(e.x,e.y),2.6,{sprite:COIN,spin:0.14,color:"#ffd76e",r:5});
-    return;
-  }
-  if(e.t<60) e.y+=2.2;
-  else if(e.t===70||e.t===95||e.t===120) nway(e.x,e.y,aimAt(e.x,e.y),3,0.5,2.2,{sprite:COIN,spin:0.14,color:"#ffd76e",r:5});
-  else if(e.t>150){ e.y-=1.6; e.x+=(e.exitDir||1)*1.2; }
+const BEAUTY_WORDS=[["美肌","#ff8ab0"],["小顔","#f2a0b0"],["艶","#c9a7ff"]];
+const beautyWord = ()=>BEAUTY_WORDS[Math.floor(rand(0,3))];
+
+// 勧誘の行列: 全員が同じサインカーブ(y=f(x))をなぞって数珠つなぎで横断するワナビー男。
+// たまに自機へコインを1枚投げる
+zakoAI.snakeM = function(e){
+  e.x += e.snakeDir*2.2;
+  e.y = e.snakeY + Math.sin(e.x*0.018)*55;
+  if(e.t%60===e.seed%60) shot(e.x,e.y,aimAt(e.x,e.y),2.4,{sprite:COIN,spin:0.14,color:"#ffd76e",r:5});
 };
 
-// ワナビー女: 美容の単語弾を撃つ(「美肌」「小顔」「艶」)
-zakoAI.wannabeF = function(e){
-  const WORDS=[["美肌","#ff8ab0"],["小顔","#f2a0b0"],["艶","#c9a7ff"]];
-  if(e.vx!==undefined){
-    e.x += e.vx; e.y += Math.cos(e.t*0.05)*0.8;
-    if(e.t%45===15){ const wd=WORDS[Math.floor(rand(0,3))]; ring(e.x,e.y,5,1.4,rand(0,TAU),{word:wd[0],color:wd[1],r:7}); }
+// マルチ商法ピラミッド編隊: 定位置に整列して停止し、上の段から順にコインの扇を
+// 下へカスケード発射(上に立つほど儲かる)。ひとしきり撒いたら上へ帰っていく
+zakoAI.pyramidM = function(e){
+  if(e.t<100){ e.y += (e.ty-e.y)*0.07; return; }
+  if(e.t<380){
+    if((e.t-100-e.row*18)%110===0){
+      nway(e.x,e.y+8, Math.PI/2 + (e.x<W/2?0.15:-0.15), 3, 0.65, 1.9, {sprite:COIN,spin:0.14,color:"#ffd76e",r:5});
+    }
     return;
   }
-  if(e.t<60) e.y+=2.0;
-  else if(e.t%60===30){ const wd=WORDS[Math.floor(rand(0,3))]; ring(e.x,e.y,6,1.5,rand(0,TAU),{word:wd[0],color:wd[1],r:7}); }
-  else if(e.t>280){ e.y-=1.4; e.x+=(e.exitDir||-1)*1.0; }
+  e.y-=1.8; e.x+=(e.x<W/2?-1:1)*0.6;
+};
+
+// DM奇襲: 画面横から自機の高さ付近ににゅっと現れ、美容弾のリングを1発置いて即撤退するワナビー女
+zakoAI.ambushF = function(e){
+  if(e.t<42){ e.x += e.dir*2.8; return; }
+  if(e.t===64){ const wd=beautyWord(); ring(e.x,e.y,7,1.5,rand(0,TAU),{word:wd[0],color:wd[1],r:7}); }
+  if(game.diff>=2 && e.t===88) shot(e.x,e.y,aimAt(e.x,e.y),2.8,{word:"垢抜け",color:"#ff8ab0",r:7}); // HARD+: 撤退際に一撃
+  if(e.t>100) e.x -= e.dir*3.2;
+};
+
+// セミナー講師: 画面上部に居座り、重力で放物線を描くコインの噴水をばら撒き続ける中型機
+zakoAI.lecturerM = function(e){
+  if(e.t<70){ e.y+=1.2; return; }
+  if(e.t<520){
+    const iv = game.diff>=2 ? 7 : 11;
+    if(e.t%iv===0){
+      // 初速は控えめに(真上に強く投げると画面上端のカリング y>-30 で弾が消えるため)
+      const a = -Math.PI/2 + rand(-1.2,1.2);
+      const sp = rand(1.5,2.6);
+      shot(e.x,e.y-6,a,sp,{sprite:COIN,spin:0.2,color:"#ffd76e",r:5,
+        update(bl){ bl.vy += 0.045; bl.x+=bl.vx; bl.y+=bl.vy; }, // 重力で降り注ぐ
+      });
+    }
+    if(e.t%160===80) e.tx = clamp(e.x+rand(-70,70), 60, W-60);
+    if(e.tx!==undefined) e.x += (e.tx-e.x)*0.04;
+    return;
+  }
+  e.y-=1.4;
+};
+
+// 成り上がり: 画面下の左右端から上へ駆け上がるワナビー女。内側へ美容弾の扇を撃つ
+zakoAI.riserF = function(e){
+  e.y -= 1.7; e.x += Math.sin(e.t*0.08)*0.8;
+  if(e.t%70===30){
+    const wd=beautyWord();
+    nway(e.x,e.y, e.x<W/2 ? 0.35 : Math.PI-0.35, 3, 0.5, 1.8, {word:wd[0],color:wd[1],r:7}); // 内側へ
+  }
+};
+
+// 決算報告: 左右の上角から対角線に横切りながらコインを落とすワナビー男(フィナーレのX交差)
+zakoAI.diagM = function(e){
+  e.x += e.vx; e.y += 1.7;
+  if(e.t%55===e.seed%55) shot(e.x,e.y,Math.PI/2+rand(-0.25,0.25),1.6,{sprite:COIN,spin:0.14,color:"#ffd76e",r:5});
 };
 
 // 信者(符減で召喚): 教祖の周りを回りながら自機へチケット弾を乱射し、
@@ -97,31 +139,43 @@ function spawnBelievers(){
 }
 
 function buildStage(){
-  // --- 第1波: ワナビー男の編隊(降下) ---
-  for(let i=0;i<5;i++) at(60+i*22, ()=>spawnEnemy({
-    x:80+i*70, y:-20, hp:8, ai:zakoAI.wannabeM, sprite:IMG.WANNABE_M_SPRITE, color:"#ffd76e", exitDir: i<3?-1:1, score:180,
+  // --- 第1波: 勧誘の行列(左→右のスネーク8連) ---
+  for(let i=0;i<8;i++) at(60+i*16, ()=>spawnEnemy({
+    x:-20, y:100, snakeDir:1, snakeY:100, seed:i*13, hp:6,
+    ai:zakoAI.snakeM, sprite:IMG.WANNABE_M_SPRITE, color:"#ffd76e", score:130, dropPow:i===7?1:0,
   }));
-  // --- 第2波: ワナビー女の左右横切り ---
-  for(let i=0;i<6;i++) at(340+i*30, ()=>spawnEnemy({
-    x:i%2?W+20:-20, y:60+i*22, vx:i%2?-2.2:2.2, hp:7,
-    ai:zakoAI.wannabeF, sprite:IMG.WANNABE_F_SPRITE, color:"#ff8ab0", score:150, dropPow:i%3===0?1:0,
+  // --- 第2波: 勧誘の行列(右→左、少し低い段) ---
+  for(let i=0;i<8;i++) at(320+i*16, ()=>spawnEnemy({
+    x:W+20, y:170, snakeDir:-1, snakeY:170, seed:i*13+7, hp:6,
+    ai:zakoAI.snakeM, sprite:IMG.WANNABE_M_SPRITE, color:"#ffd76e", score:130, dropPow:i===7?1:0,
   }));
-  // --- 第3波: ワナビー男の雨 ---
-  for(let i=0;i<8;i++) at(650+i*35, ()=>spawnEnemy({
-    x:rand(50,W-50), y:-20, hp:8, ai:zakoAI.wannabeM, sprite:IMG.WANNABE_M_SPRITE, color:"#ffd76e", score:160,
+  // --- 第3波: マルチ商法ピラミッド(1-2-3-4の10人が整列してコインをカスケード) ---
+  {
+    const rows=[[0],[-1,1],[-2,0,2],[-3,-1,1,3]];
+    rows.forEach((cols,row)=>{
+      for(const c of cols) at(620+row*14, ()=>spawnEnemy({
+        x:W/2+c*38, y:-24-row*10, ty:56+row*34, row, hp:9,
+        ai:zakoAI.pyramidM, sprite:IMG.WANNABE_M_SPRITE, color:"#ffd76e", score:170, dropPow:row===0?2:0, dropPoint:1,
+      }));
+    });
+  }
+  // --- 第4波: DM奇襲(左右から自機の高さ付近へ交互ににゅっ) ---
+  for(let i=0;i<6;i++) at(1020+i*46, ()=>spawnEnemy({
+    x:i%2?W+20:-20, y:300+(i%3)*70, dir:i%2?-1:1, hp:7,
+    ai:zakoAI.ambushF, sprite:IMG.WANNABE_F_SPRITE, color:"#ff8ab0", score:160, dropPow:i%3===0?1:0,
   }));
-  // --- ワナビー女ラッシュ ---
-  for(let i=0;i<10;i++) at(1050+i*16, ()=>spawnEnemy({
-    x:rand(40,W-40), y:-20, hp:6, ai:zakoAI.wannabeF, sprite:IMG.WANNABE_F_SPRITE, color:"#ff8ab0", exitDir:Math.random()<0.5?-1:1, score:130,
+  // --- 第5波: セミナー講師x2(重力コインの噴水を撒き続ける中型機) ---
+  at(1290, ()=>spawnEnemy({x:W*0.28,y:-30,hp:110,r:16,ai:zakoAI.lecturerM,sprite:IMG.WANNABE_M_SPRITE,color:"#ffb14d",score:1800,dropPow:3,dropPoint:4}));
+  at(1350, ()=>spawnEnemy({x:W*0.72,y:-30,hp:110,r:16,ai:zakoAI.lecturerM,sprite:IMG.WANNABE_M_SPRITE,color:"#ffb14d",score:1800,dropPow:3,dropPoint:4}));
+  // --- 第6波: 成り上がりラッシュ(画面下の左右端から駆け上がる) ---
+  for(let i=0;i<8;i++) at(1600+i*28, ()=>spawnEnemy({
+    x:i%2?W-42:42, y:H+20, hp:6,
+    ai:zakoAI.riserF, sprite:IMG.WANNABE_F_SPRITE, color:"#ff8ab0", score:140,
   }));
-  for(let i=0;i<8;i++) at(1350+i*25, ()=>spawnEnemy({
-    x:i%2?W+20:-20, y:rand(50,180), vx:i%2?-2.6:2.6, hp:7, ai:zakoAI.wannabeM, sprite:IMG.WANNABE_M_SPRITE, color:"#ffd76e", score:150,
-  }));
-  // --- 最終波: 混成ラッシュ ---
-  for(let i=0;i<10;i++) at(1700+i*18, ()=>spawnEnemy({
-    x:rand(40,W-40), y:-20, hp: i%2?6:8, ai: i%2?zakoAI.wannabeF:zakoAI.wannabeM,
-    sprite: i%2?IMG.WANNABE_F_SPRITE:IMG.WANNABE_M_SPRITE,
-    color: i%2?"#ff8ab0":"#ffd76e", score:150, exitDir: Math.random()<0.5?-1:1,
+  // --- 最終波: 決算報告(上角からのX交差でコインを落とす) ---
+  for(let i=0;i<8;i++) at(1860+i*22, ()=>spawnEnemy({
+    x:i%2?W+20:-20, y:-20+(i%4)*14, vx:i%2?-2.0:2.0, seed:i*17, hp:7,
+    ai:zakoAI.diagM, sprite:IMG.WANNABE_M_SPRITE, color:"#ffd76e", score:150, dropPow:i%4===0?1:0,
   }));
   // --- ボス登場 ---
   at(2150, startDialogue);
