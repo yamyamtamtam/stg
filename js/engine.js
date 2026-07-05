@@ -672,7 +672,7 @@ function updatePlayer(){
     for(const b of eBullets){ addScore(10); burstMaybe(b); }
     eBullets.length=0;
     for(const e of enemies) e.hp-=1.2;
-    if(boss&&boss.t>=0) boss.hp-=1.0;
+    if(boss&&boss.t>=0) boss.hp-=1.0*(boss.dmgMult ?? 1); // バリア中(dmgMult=0)はボム直撃も無効
   }
 }
 function burstMaybe(b){ if(Math.random()<0.2) burst(b.x,b.y,b.color,3,1.5); }
@@ -760,9 +760,13 @@ function update(){
       sp.fire(boss);
       boss.spellTime--;
       boss.dmgMult = enemies.some(e=>e.summonTag) ? 0.12 : 1; // 召喚キャラが生きている間はダメージが通りにくい
+      // シナリオが bossBarrierOnInvul を立てていると、自機の無敵時間中(ボム含む)は
+      // ボスがバリアを貼って自機の攻撃を完全に無効化する(シナリオ4の仕様)
+      boss.barrier = !!(curScenario().bossBarrierOnInvul && (player.invul>0 || player.bombTime>0));
+      if(boss.barrier) boss.dmgMult = 0;
       for(const b of pBullets){
         if(b.hit)continue;
-        if((b.x-boss.x)**2+(b.y-boss.y)**2<(boss.r+b.r)**2){ b.hit=true; boss.hp-=b.dmg*(boss.dmgMult||1); addScore(10); }
+        if((b.x-boss.x)**2+(b.y-boss.y)**2<(boss.r+b.r)**2){ b.hit=true; boss.hp-=b.dmg*boss.dmgMult; addScore(10); }
       }
       pBullets=pBullets.filter(b=>!b.hit);
       if(sp.checkAdvance && sp.checkAdvance(boss)){
@@ -1019,6 +1023,16 @@ function drawBoss(){
     ctx.imageSmoothingEnabled=true;
   }else{
     ctx.fillStyle="#7b4dff"; ctx.beginPath(); ctx.arc(0,0,b.r,0,TAU); ctx.fill();
+  }
+  // バリア(自機無敵中は攻撃無効: bossBarrierOnInvul シナリオ用の視覚表示)
+  if(b.barrier){
+    const rr = b.r*2.4 + Math.sin(game.frame*0.25)*2;
+    ctx.globalAlpha = 0.5 + Math.sin(game.frame*0.2)*0.15;
+    ctx.strokeStyle="#8ad4ff"; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(0,0,rr,0,TAU); ctx.stroke();
+    ctx.globalAlpha = 0.12; ctx.fillStyle="#8ad4ff";
+    ctx.beginPath(); ctx.arc(0,0,rr,0,TAU); ctx.fill();
+    ctx.lineWidth=1; ctx.globalAlpha=1;
   }
   ctx.restore();
 
@@ -1327,7 +1341,7 @@ function drawCutIn(){
 }
 
 function drawBanner(){
-  if(!game.banner || game.state!=="play") return;
+  if(!game.banner || game.state!=="play" || game.dialog) return; // 会話パート中はステージ名を出さない
   const t=game.banner.t, dur=game.banner.dur;
   const a = t<30 ? t/30 : t>dur-40 ? Math.max(0,(dur-t)/40) : 1;
   const sc = curScenario();
@@ -1345,10 +1359,11 @@ function drawDialog(){
   const list = dialogList();
   const d = list[game.dialog.idx];
   const uraraTurn = d.who==="うらら";
-  const drawP=(img,left,active,scale,margin,bottom)=>{
+  const drawP=(img,pos,active,scale,margin,bottom)=>{
+    // pos: true=左寄せ / false=右寄せ / "center"=中央配置
     if(!(img.complete&&img.naturalWidth)) return;
     const pw=img.naturalWidth*scale, ph=img.naturalHeight*scale;
-    const px = left ? margin : W-pw-margin;
+    const px = pos==="center" ? (W-pw)/2 : pos ? margin : W-pw-margin;
     const py = H-ph-bottom;  // bottom: 下端の高さ(小さいほど下に沈む)
     ctx.globalAlpha = active?1:0.35;
     if(!active) ctx.filter="brightness(0.6)";
@@ -1363,10 +1378,10 @@ function drawDialog(){
     }
   }else{
     // 話者を後に描いて手前に出す。ボス立ち絵の画像/配置はシナリオ定義から取得
-    // (bd.solo が真ならボス単独の演出: うららの立ち絵を出さない)
+    // (bd.solo=ボス単独でうららを出さない / bd.center=ボス立ち絵を画面中央に配置)
     const bd = curScenario().boss.dialog(game.dialog.set);
     const ports = [
-      [bd.img, false, !uraraTurn, bd.scale, bd.margin, bd.bottom],
+      [bd.img, bd.center?"center":false, !uraraTurn, bd.scale, bd.margin, bd.bottom],
     ];
     if(!bd.solo) ports.push([IMG.URARA_PORTRAIT, true, uraraTurn, 0.85, 8, 108]);
     ports.sort((a,b)=>(a[2]?1:0)-(b[2]?1:0));
@@ -1379,13 +1394,23 @@ function drawDialog(){
   ctx.fillStyle   = uraraTurn?"#ffd76e":"#c9a7ff";
   ctx.font="bold 13px sans-serif"; ctx.textAlign="left";
   ctx.fillText(d.who, bx+14, by+24);
-  ctx.fillStyle="#e8e2f5"; ctx.font="13px sans-serif";
-  const maxW=bw-28; let line="", ly=by+48;
+  // セリフ本文: 会話データの size(px)/center(中央寄せ)指定に対応(例: シナリオ4「死ぬがよい。」)
+  const fsize = d.size || 13;
+  ctx.fillStyle="#e8e2f5"; ctx.font=fsize+"px sans-serif";
+  const maxW=bw-28;
+  const lines=[]; let line="";
   for(const ch of d.text){
-    if(ctx.measureText(line+ch).width>maxW){ ctx.fillText(line,bx+14,ly); line=ch; ly+=20; }
+    if(ctx.measureText(line+ch).width>maxW){ lines.push(line); line=ch; }
     else line+=ch;
   }
-  ctx.fillText(line,bx+14,ly);
+  lines.push(line);
+  const lineH = Math.round(fsize*1.55);
+  let ly = d.center ? by + (bh - (lines.length-1)*lineH)/2 + fsize*0.35 + 6 : by+48;
+  for(const l of lines){
+    if(d.center){ ctx.textAlign="center"; ctx.fillText(l, bx+bw/2, ly); ctx.textAlign="left"; }
+    else ctx.fillText(l, bx+14, ly);
+    ly += lineH;
+  }
   if(Math.floor(game.frame/25)%2===0){
     ctx.fillStyle="#8b7fb5"; ctx.font="11px sans-serif"; ctx.textAlign="right";
     ctx.fillText(IS_TOUCH?"タップで次へ ▼":"Z で次へ ▼", bx+bw-12, by+bh-10);

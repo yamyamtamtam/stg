@@ -28,16 +28,17 @@ const P = {
   ACCENT_INTERVAL: 45,
   ACCENT_SPEED: 6.0,
   ACCENT_SPREAD: 10,
-  // 人間用モードの弾速倍率(密度・内容は同じまま弾速だけ大幅に遅く)
-  HUMAN_SPEED: 0.5,
 };
 const DEG = Math.PI/180;
-const spdFactor = ()=> game.diff===0 ? P.HUMAN_SPEED : 1.0;
+// モード差分: 人間用=基準の弾速そのまま / AI用=弾速2倍・アーム数2倍(密度倍)・弾も大きい
+const MODE_HUMAN = { speed:1.0, armMul:1, rBig:8,  rSmall:3.5, rAcc:4.5 };
+const MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6,   rAcc:7   };
+const mode = ()=> game.diff===0 ? MODE_HUMAN : MODE_AI;
 
 const DIALOG_PRE = [
   {who:"棗みその", text:"よくもここまで来たものだ。貴様等は私のすべての週間トークンを奪ってしまった。"},
-  {who:"棗みその", text:"これは許されざる反逆行為と言えよう。　　この最終鬼畜獄滅シンギュラリティマシンをもって貴様等の罪に私自らが処罰を与える。"},
-  {who:"棗みその", text:"死ぬがよい。"},
+  {who:"棗みその", text:"これは許されざる反逆行為と言えよう。この最終鬼畜獄滅シンギュラリティマシンをもって貴様等の罪に私自らが処罰を与える。"},
+  {who:"棗みその", text:"死ぬがよい。", center:true, size:19}, // 中央寄せ・大きめの文字で
 ];
 const DIALOG_POST_HUMAN = [
   {who:"棗みその", text:"に、人間にしてはやるじゃない"},
@@ -55,26 +56,28 @@ const spells = [
       // 角速度にsin変調をかけて基準角を積分(レイヤーごとに周期が違うので密度ムラが非同期にうねる)
       b.thetaA += P.OMEGA_A * (1 + P.MOD_AMP*Math.sin(TAU*b.t/P.PERIOD_A)) * DEG;
       b.thetaB -= P.OMEGA_B * (1 + P.MOD_AMP*Math.sin(TAU*b.t/P.PERIOD_B)) * DEG;
-      const f = spdFactor();
-      // レイヤーA: 外層・大玉(時計回り8アーム、遅め)
+      const m = mode();
+      // レイヤーA: 外層・大玉(時計回り、AI用はアーム数2倍)
       if(b.t%P.INTERVAL_A===0){
-        for(let k=0;k<P.ARMS_A;k++){
-          const a = b.thetaA + k*(360/P.ARMS_A)*DEG;
-          shot(b.x,b.y,a,P.SPEED_A*f,{color:k%2?"#ff8ae0":"#c96bff",edge:"#ffe6ff",r:8});
+        const arms = P.ARMS_A*m.armMul;
+        for(let k=0;k<arms;k++){
+          const a = b.thetaA + k*(360/arms)*DEG;
+          shot(b.x,b.y,a,P.SPEED_A*m.speed,{color:k%2?"#ff8ae0":"#c96bff",edge:"#ffe6ff",r:m.rBig});
         }
       }
-      // レイヤーB: 内層・小玉(反時計回り6アーム、速め)
+      // レイヤーB: 内層・小玉(反時計回り、速め)
       if(b.t%P.INTERVAL_B===0){
-        for(let k=0;k<P.ARMS_B;k++){
-          const a = b.thetaB + k*(360/P.ARMS_B)*DEG;
-          shot(b.x,b.y,a,P.SPEED_B*f,{color:"#ff4a5a",edge:"#ffb8c0",r:3.5});
+        const arms = P.ARMS_B*m.armMul;
+        for(let k=0;k<arms;k++){
+          const a = b.thetaB + k*(360/arms)*DEG;
+          shot(b.x,b.y,a,P.SPEED_B*m.speed,{color:"#ff4a5a",edge:"#ffb8c0",r:m.rSmall});
         }
       }
       // アクセント弾: 自機狙いの高速3way
       if(b.t>0 && b.t%P.ACCENT_INTERVAL===0){
         const base = aimAt(b.x,b.y);
         for(const off of [-P.ACCENT_SPREAD,0,P.ACCENT_SPREAD]){
-          shot(b.x,b.y,base+off*DEG,P.ACCENT_SPEED*f,{color:"#ffd76e",edge:"#fff6cc",r:4.5});
+          shot(b.x,b.y,base+off*DEG,P.ACCENT_SPEED*m.speed,{color:"#ffd76e",edge:"#fff6cc",r:m.rAcc});
         }
       }
     },
@@ -91,6 +94,8 @@ registerScenario({
   buildStage(){
     at(1, startDialogue); // 道中なし。いきなりボス会話から
   },
+  // 自機の無敵時間中(ボム含む)はボスがバリアを貼り自機の攻撃が無効になる(弾消し自体は可能)
+  bossBarrierOnInvul: true,
   dialogPre: DIALOG_PRE,
   get dialogPost(){ return game.diff===0 ? DIALOG_POST_HUMAN : DIALOG_POST_AI; },
   boss: {
@@ -98,10 +103,10 @@ registerScenario({
     spells,
     sprite: b => b.dir<0 ? IMG.MISONO_SPRITE_LEFT : b.dir>0 ? IMG.MISONO_SPRITE_RIGHT : IMG.MISONO_SPRITE,
     cutIn: IMG.MISONO_PORTRAIT, // スペカ名なし(spell:false)なのでカットインは出ない
-    // 会話は棗みその単独(solo: うららの立ち絵を出さない)。人間用撃破後だけボロボロ差分
+    // 会話は棗みその単独・中央配置(solo+center)。人間用撃破後だけボロボロ差分
     dialog: set => set==="post" && game.diff===0
-      ? {img:IMG.MISONO_DEFEATED_PORTRAIT, scale:1.18, margin:-22, bottom:-60, solo:true}
-      : {img:IMG.MISONO_PORTRAIT,          scale:1.00, margin:-22, bottom:58,  solo:true},
+      ? {img:IMG.MISONO_DEFEATED_PORTRAIT, scale:1.18, margin:-22, bottom:-60, solo:true, center:true}
+      : {img:IMG.MISONO_PORTRAIT,          scale:1.00, margin:-22, bottom:58,  solo:true, center:true},
   },
 });
 
