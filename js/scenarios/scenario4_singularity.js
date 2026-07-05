@@ -30,9 +30,9 @@ const P = {
   ACCENT_SPREAD: 10,
 };
 const DEG = Math.PI/180;
-// モード差分: 人間用=基準の弾速そのまま / AI用=弾速2倍・アーム数2倍(密度倍)・弾も大きい
-const MODE_HUMAN = { speed:1.0, armMul:1, rBig:8,  rSmall:3.5, rAcc:4.5 };
-const MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6,   rAcc:7   };
+// モード差分: 弾サイズは共通。AI用は弾速がさらに速く、アーム数2倍(密度倍)
+const MODE_HUMAN = { speed:1.3, armMul:1, rBig:12, rSmall:6, rAcc:7 };
+const MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6, rAcc:7 };
 const mode = ()=> game.diff===0 ? MODE_HUMAN : MODE_AI;
 
 const DIALOG_PRE = [
