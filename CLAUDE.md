@@ -56,6 +56,9 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
 2. `index.html` の `js/main.js` より前に `<script>` タグを1行追加
 3. 新スプライトが要る場合は `tools/build_sprites.py` にピクセルマップ/立ち絵を追加して
    `--inject` → `IMG.<定数名>` で参照。敵定義に `sprite: IMG.XXX` を渡すと雑魚の絵になる
+4. ASIデモプレイ(難易度選択画面下の自動デモボタン)が要る場合はシナリオに
+   `demoLabel/demoDiff/demoEndWho/demoEndText/demoReplayText` を定義。自機の見た目を
+   差し替えたい場合は `demoPlayerSprite(dir)` も追加(シナリオ4は棗みその後ろ姿)
 
 ## アセットパイプライン
 - ドット絵: `tools/build_sprites.py` 内のピクセルマップ(文字列アート)が原本。

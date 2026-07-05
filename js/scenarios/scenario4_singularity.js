@@ -101,6 +101,8 @@ registerScenario({
   // ボムなし低速移動で避け切って撃破し、みそののセリフ→自動リプレイでループする
   demoLabel: "ASIデモプレイ",
   demoDiff: 1, // AI用
+  // デモ中の自機表示: 棗みその後ろ姿(通常のうららの代わりに使う)
+  demoPlayerSprite: dir => dir<0 ? IMG.MISONO_BACK_SPRITE_LEFT : dir>0 ? IMG.MISONO_BACK_SPRITE_RIGHT : IMG.MISONO_BACK_SPRITE,
   demoEndWho: "棗みその",
   demoEndText: "E4 BA BA E9 96 93 E3 81 AB E3 81 AF E3 81 A7 E3 81 8D E3 81 AA E3 81 84 E3 81 A7 E3 81 97 E3 82 87 EF BC 9F",
   demoReplayText: "ASIデモプレイを自動リプレイ",

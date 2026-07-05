@@ -1018,8 +1018,11 @@ function drawPlayer(){
   if(!player.alive)return;
   if(player.invul>0 && Math.floor(game.frame/4)%2===0) ctx.globalAlpha=0.4;
   const x=player.x,y=player.y;
-  // 神北うらら(後ろ姿ドット): 移動方向で少し傾いた差分スプライットに切替
-  const spr = player.dir<0 ? IMG.URARA_SPRITE_LEFT : player.dir>0 ? IMG.URARA_SPRITE_RIGHT : IMG.URARA_SPRITE;
+  // 神北うらら(後ろ姿ドット): 移動方向で少し傾いた差分スプライットに切替。
+  // ASIデモプレイ中はシナリオが demoPlayerSprite を定義していればそちらを使う(例: シナリオ4は棗みその後ろ姿)
+  const demoSpr = game.demo && curScenario().demoPlayerSprite;
+  const spr = demoSpr ? demoSpr(player.dir)
+    : player.dir<0 ? IMG.URARA_SPRITE_LEFT : player.dir>0 ? IMG.URARA_SPRITE_RIGHT : IMG.URARA_SPRITE;
   if(spr.complete && spr.naturalWidth){
     const s=1, sw=spr.naturalWidth*s, sh=spr.naturalHeight*s;
     ctx.imageSmoothingEnabled=false;
@@ -1168,10 +1171,13 @@ function drawBoss(){
 }
 
 function drawPlayerBullets(){
-  // 自弾(太陽モチーフ: くるくる回る)。敵弾幕と重なった時に見づらくならないよう最背面(drawItemsより前)で描く
+  // 自弾(太陽モチーフ: くるくる回る)。敵弾幕と重なった時に見づらくならないよう最背面(drawItemsより前)で描く。
+  // ASIデモ中は棗みそのが自機なので同じ軌道のまま月弾の見た目に差し替える
   ctx.globalAlpha=0.95;
   for(const b of pBullets){
-    const spr = b.type==="main" ? sunMain : sunOpt;
+    const spr = game.demo
+      ? (b.type==="main" ? moonSprite("#c9a7ff",6.5) : moonSprite("#e0c8ec",4.8))
+      : (b.type==="main" ? sunMain : sunOpt);
     ctx.save(); ctx.translate(b.x,b.y);
     ctx.rotate(game.frame*0.15 + b.x*0.05);
     ctx.drawImage(spr, -spr.width/2, -spr.height/2);
