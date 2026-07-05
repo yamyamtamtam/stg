@@ -18,7 +18,8 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
 ## js/engine.js の構成
 - 入力: `keys{}`(キーボード) / `touch{}`(タッチ。ドラッグ移動・ダブルタップボム・2本指低速)
 - 弾: `shot()/nway()/ring()`。opt で `moon`(三日月弾) `word`(文字弾) `seq`(114514数字弾)
-  `accel/turn` を指定
+  `accel/turn` `sprite/spin`(canvas画像弾: コイン・チケット等。spin=0で進行方向を向く)
+  `update(b)`(指定すると直進せず毎フレームこの関数だけで動く。ボス周回のデコ弾等)を指定
 - 汎用雑魚AI: `zakoAI.{diver,crosser,swirler}`。シナリオ固有AIは各シナリオファイルが
   `zakoAI.xxx = function(e){...}` で追加(fortress→シナリオ1、chiuma/buta→シナリオ2、
   wannabeM/wannabeF/believer→シナリオ3)

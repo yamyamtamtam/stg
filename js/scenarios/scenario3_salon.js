@@ -7,16 +7,49 @@
 //======================================================================
 (function(){
 
-// ワナビー男: お金の単語弾を撃つ(「¥」「万円」「不労所得」)
+//--- お金弾(銭形コイン)スプライト: 金の縁+四角い穴+ハイライト。spinでくるくる回す ---
+function makeCoin(r){
+  const pad=2, size=Math.ceil((r+pad)*2);
+  const c=document.createElement("canvas"); c.width=c.height=size;
+  const g=c.getContext("2d"); g.translate(size/2,size/2);
+  g.fillStyle="#b8860b"; g.beginPath(); g.arc(0,0,r,0,TAU); g.fill();        // 縁(暗い金)
+  g.fillStyle="#ffd76e"; g.beginPath(); g.arc(0,0,r*0.82,0,TAU); g.fill();   // 面
+  g.fillStyle="#e8b84a"; g.beginPath(); g.arc(0,0,r*0.55,0,TAU); g.fill();   // 内圏
+  g.fillStyle="#8a6508"; g.fillRect(-r*0.26,-r*0.26,r*0.52,r*0.52);          // 四角い穴(銭形)
+  g.strokeStyle="rgba(255,255,255,0.85)"; g.lineWidth=1.5;
+  g.beginPath(); g.arc(0,0,r*0.68,-2.3,-1.2); g.stroke();                    // ハイライト
+  return c;
+}
+const COIN = makeCoin(8), COIN_BIG = makeCoin(10);
+
+//--- チケット弾スプライト: 映画の半券(ノッチ+ミシン目)。ひらひら舞いながら飛んでくる ---
+function makeTicket(){
+  const w=26, h=14;
+  const c=document.createElement("canvas"); c.width=w+4; c.height=h+4;
+  const g=c.getContext("2d"); g.translate(2,2);
+  g.fillStyle="#ff5d7a"; g.fillRect(0,0,w,h);                                 // 本体
+  g.globalCompositeOperation="destination-out";                               // 両側の半円ノッチ
+  g.beginPath(); g.arc(w*0.72,0,2.6,0,TAU); g.fill();
+  g.beginPath(); g.arc(w*0.72,h,2.6,0,TAU); g.fill();
+  g.globalCompositeOperation="source-over";
+  g.strokeStyle="#ffd6e0"; g.lineWidth=1; g.strokeRect(1.5,1.5,w-3,h-3);      // 内枠
+  g.setLineDash([2,2]); g.strokeStyle="#fff";                                 // ミシン目
+  g.beginPath(); g.moveTo(w*0.72,1); g.lineTo(w*0.72,h-1); g.stroke();
+  g.setLineDash([]);
+  g.fillStyle="#fff"; g.beginPath(); g.arc(w*0.3,h/2,2.2,0,TAU); g.fill();    // 券面の丸
+  return c;
+}
+const TICKET = makeTicket();
+
+// ワナビー男: お金弾(回転するコイン)を撃つ
 zakoAI.wannabeM = function(e){
-  const WORDS=[["¥","#ffd76e"],["万円","#ffd76e"],["不労所得","#ffb14d"]];
   if(e.vx!==undefined){
     e.x += e.vx; e.y += Math.sin(e.t*0.05)*0.8;
-    if(e.t%50===20){ const wd=WORDS[Math.floor(rand(0,3))]; shot(e.x,e.y,aimAt(e.x,e.y),2.6,{word:wd[0],color:wd[1],r:7}); }
+    if(e.t%50===20) shot(e.x,e.y,aimAt(e.x,e.y),2.6,{sprite:COIN,spin:0.14,color:"#ffd76e",r:5});
     return;
   }
   if(e.t<60) e.y+=2.2;
-  else if(e.t===70||e.t===95||e.t===120){ const wd=WORDS[Math.floor(rand(0,3))]; nway(e.x,e.y,aimAt(e.x,e.y),3,0.5,2.2,{word:wd[0],color:wd[1],r:7}); }
+  else if(e.t===70||e.t===95||e.t===120) nway(e.x,e.y,aimAt(e.x,e.y),3,0.5,2.2,{sprite:COIN,spin:0.14,color:"#ffd76e",r:5});
   else if(e.t>150){ e.y-=1.6; e.x+=(e.exitDir||1)*1.2; }
 };
 
@@ -40,7 +73,7 @@ zakoAI.believer = function(e){
   e.orbitA += e.spin;
   e.x = boss.x + Math.cos(e.orbitA)*e.orbitR;
   e.y = boss.y + Math.sin(e.orbitA)*e.orbitR;
-  if((e.t+e.seed)%50===0) shot(e.x,e.y,aimAt(e.x,e.y),2.3,{word:"チケット",color:"#ff8ab0",r:7});
+  if((e.t+e.seed)%50===0) shot(e.x,e.y,aimAt(e.x,e.y),2.3,{sprite:TICKET,spin:0.09,color:"#ff8ab0",r:6});
   if((e.t+e.seed)%28===14){
     const wd=PRAISE[Math.floor(rand(0,4))];
     shot(e.x,e.y,Math.atan2(boss.y-e.y,boss.x-e.x),1.4,{word:wd[0],color:wd[1],r:6});
@@ -107,11 +140,38 @@ const DIALOG_POST = [
   {who:"うらら", text:"一生やってろ！"},
 ];
 
+// 誇符のデコ弾: ボスの周りを回転するだけの派手な月弾・コインの三重リング(自機には飛んでこない)。
+// update指定の弾は直進せず毎フレームこの関数だけで動く。フェーズ切替・ボムで消える
+function spawnHokoDecoration(b){
+  // 外周は 半径+ゆらぎ7 がボス可動域(x:60〜W-60)から画面外カリング(±30)にかからない80まで
+  const RINGS = [
+    {n:18, R:42, spin: 0.030, moon:true,  color:"#ffd76e", r:5},
+    {n:24, R:61, spin:-0.022, moon:false, color:"#ff9de0", r:5, coin:true},
+    {n:30, R:80, spin: 0.016, moon:true,  color:"#c96bff", r:4},
+  ];
+  for(const ring of RINGS){
+    for(let i=0;i<ring.n;i++){
+      const a0 = i/ring.n*TAU;
+      shot(b.x, b.y, a0, 0, {
+        color:ring.color, r:ring.r, moon:ring.moon,
+        sprite: ring.coin ? COIN_BIG : null, spin: ring.coin ? 0.1 : 0,
+        update(bl){
+          if(!boss) return;
+          const RR = ring.R + Math.sin(bl.t*0.05 + a0)*7; // 半径をゆらして華やかに
+          bl.angle = a0 + bl.t*ring.spin;
+          bl.x = boss.x + Math.cos(bl.angle)*RR;
+          bl.y = boss.y + Math.sin(bl.angle)*RR;
+        },
+      });
+    }
+  }
+}
+
 const spells = [
   {
     name:"通常攻撃", hp:340, time:1800, spell:false,
     fire(b){
-      if(b.t%55===0) nway(b.x,b.y,aimAt(b.x,b.y),4,0.8,2.4,{word:"¥",color:"#ffd76e",r:7});
+      if(b.t%55===0) nway(b.x,b.y,aimAt(b.x,b.y),4,0.8,2.4,{sprite:COIN,spin:0.14,color:"#ffd76e",r:5});
       if(b.t%90===40) ring(b.x,b.y,12,1.6,b.t*0.02,{color:"#7ee6a0",r:4});
       if(game.diff>=2 && b.t%70===20) shot(b.x,b.y,aimAt(b.x,b.y),3.2,{word:"月100万",color:"#ff8ab0",r:8}); // HARD+: 高速の煽り弾
       if(b.t%140===0) bossMove(b);
@@ -119,23 +179,25 @@ const spells = [
   },
   {
     name:"誇符「人生を変えるAI活用術5選【永久保存版】」", hp:500, time:2100, spell:true,
+    onStart(b){ spawnHokoDecoration(b); },
     fire(b){
-      // 見た目は5本腕の派手な密集リングだが、扇形の安置が5つ常に空いていて弾速も遅い
-      // (盛った実績と同じで中身スカスカ)。HARD+は安置がやや狭くなる
-      if(b.t%30===0){
-        const th = game.diff>=2 ? 0.05 : 0.25;
-        for(let i=0;i<60;i++){
-          const a=i/60*TAU;
-          if(Math.sin(a*5+0.6)<th) continue; // 5つの固定安置
-          shot(b.x,b.y,a,1.3+(i%2)*0.5,{color:i%2?"#ffd76e":"#ff9de0",r:i%2?6:4});
+      // 見た目はボスの周りを回る大量の月弾・コイン(デコ弾: 回るだけで飛んでこない)で超派手。
+      // 実際に飛んでくる弾はごく薄く、安置が5つ常に空いている(盛った実績と同じで中身スカスカ)
+      if(!eBullets.some(x=>x.update) && b.t%60===30) spawnHokoDecoration(b); // ボムで消されたら飾り直す
+      if(b.t%50===0){
+        const th = game.diff>=2 ? 0.35 : 0.55;
+        for(let i=0;i<30;i++){
+          const a=i/30*TAU;
+          if(Math.sin(a*5+0.6)<th) continue; // 5つの広い固定安置
+          shot(b.x,b.y,a,1.2,{color:"#ff9de0",r:4});
         }
       }
-      if(b.t%120===60){
+      if(b.t%150===75){
         // 「①〜⑤」の番号弾をゆっくり自機へ(5選の演出)
         const NUM=["①","②","③","④","⑤"];
-        for(let i=0;i<5;i++) shot(b.x,b.y,aimAt(b.x,b.y)+(i-2)*0.22,1.6,{word:NUM[i],color:"#8ad4ff",r:7});
+        for(let i=0;i<5;i++) shot(b.x,b.y,aimAt(b.x,b.y)+(i-2)*0.22,1.5,{word:NUM[i],color:"#8ad4ff",r:7});
       }
-      if(b.t%240===120) bossMove(b,50);
+      if(b.t%300===150) bossMove(b,40);
     },
   },
   {

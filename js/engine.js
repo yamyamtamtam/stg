@@ -406,8 +406,10 @@ function shot(x,y,angle,speed,opt={}){
     moon: opt.moon ?? false,
     digit,
     word: opt.word ?? null,
+    sprite: opt.sprite ?? null,  // canvas/Imageをそのまま弾として描く(コイン・チケット等)
+    spin: opt.spin ?? 0,         // sprite弾の回転速度(0なら進行方向を向く)
     grazed:false, t:0,
-    update: opt.update ?? null,
+    update: opt.update ?? null,  // 指定すると毎フレームこれだけで動く(通常の直進の代わり。ボス周回のデコ弾等)
   });
 }
 const aimAt = (x,y)=>Math.atan2(player.y-y, player.x-x);
@@ -758,10 +760,14 @@ function update(){
   // 敵弾
   for(const b of eBullets){
     b.t++;
-    if(b.accel){ b.speed+=b.accel; }
-    if(b.turn){ b.angle+=b.turn; }
-    if(b.accel||b.turn){ b.vx=Math.cos(b.angle)*b.speed; b.vy=Math.sin(b.angle)*b.speed; }
-    b.x+=b.vx; b.y+=b.vy;
+    if(b.update){
+      b.update(b); // カスタム移動(ボス周回のデコ弾など)。通常の直進はしない
+    }else{
+      if(b.accel){ b.speed+=b.accel; }
+      if(b.turn){ b.angle+=b.turn; }
+      if(b.accel||b.turn){ b.vx=Math.cos(b.angle)*b.speed; b.vy=Math.sin(b.angle)*b.speed; }
+      b.x+=b.vx; b.y+=b.vy;
+    }
 
     if(player.alive && player.invul<=0){
       const d2=(b.x-player.x)**2+(b.y-player.y)**2;
@@ -1035,7 +1041,13 @@ function drawEnemyBullets(){
   // 敵弾: 単語弾 / 三日月(ボス) / 縁取り丸(+数字)。アイテムと見分けやすいよう薄くブラーをかける
   ctx.filter="blur(0.7px)";
   for(const b of eBullets){
-    if(b.word){
+    if(b.sprite){
+      // スプライト弾(コイン・チケット等): spin指定でくるくる回転、0なら進行方向を向く
+      ctx.save(); ctx.translate(b.x,b.y);
+      ctx.rotate(b.spin ? b.t*b.spin : b.angle);
+      ctx.drawImage(b.sprite, -b.sprite.width/2, -b.sprite.height/2);
+      ctx.restore();
+    }else if(b.word){
       ctx.save(); ctx.translate(b.x,b.y);
       ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
       ctx.lineWidth=3; ctx.strokeStyle="rgba(5,3,12,0.9)";
@@ -1270,18 +1282,25 @@ function drawCutIn(){
   const py = H-ph-70+Math.sin(game.frame*0.05)*4;
   if(img.complete && img.naturalWidth) ctx.drawImage(img, px, py);
 
-  // 名前プレート(立ち絵と反対側)
+  // 名前プレート(立ち絵と反対側)。長いスペカ名は自動改行して全文を見せる
   ctx.globalAlpha = a;
   ctx.font="bold 19px serif";
-  const tw=ctx.measureText(cutIn.name).width;
+  const maxW = W-120, lineH = 26;
+  const lines=[]; let line="";
+  for(const ch of cutIn.name){
+    if(ctx.measureText(line+ch).width>maxW){ lines.push(line); line=ch; }
+    else line+=ch;
+  }
+  lines.push(line);
+  const tw = Math.max(...lines.map(l=>ctx.measureText(l).width));
   const tx = right ? 24-slide*0.5 : W-tw-24+slide*0.5;
   const ty = H*0.30;
   ctx.fillStyle="rgba(5,3,12,0.85)";
-  ctx.fillRect(tx-10, ty-24, tw+20, 34);
+  ctx.fillRect(tx-10, ty-24, tw+20, 34+(lines.length-1)*lineH);
   ctx.strokeStyle = right ? "#c9a7ff" : "#ffd76e";
-  ctx.strokeRect(tx-10, ty-24, tw+20, 34);
+  ctx.strokeRect(tx-10, ty-24, tw+20, 34+(lines.length-1)*lineH);
   ctx.fillStyle="#ffd76e"; ctx.textAlign="left";
-  ctx.fillText(cutIn.name, tx, ty);
+  lines.forEach((l,i)=>ctx.fillText(l, tx, ty+i*lineH));
   ctx.restore();
 }
 
