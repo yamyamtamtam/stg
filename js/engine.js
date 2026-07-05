@@ -4,9 +4,11 @@
 //======================================================================
 
 //--- BGM(タイトル〜チュートリアル / 道中 / ボス戦。ボス戦はみそのとオタサーの姫で共通) ---
-const bgmTitle = new Audio(); bgmTitle.src = BGM_SRC.TITLE; bgmTitle.loop = true; bgmTitle.volume = 0.55;
-const bgmStage = new Audio(); bgmStage.src = BGM_SRC.STAGE; bgmStage.loop = true; bgmStage.volume = 0.55;
-const bgmBoss  = new Audio(); bgmBoss.src  = BGM_SRC.BOSS;  bgmBoss.loop = true; bgmBoss.volume = 0.55;
+// BGMはSE(Web Audio)より控えめにしてSEが埋もれないようにする
+const BGM_VOLUME = 0.26;
+const bgmTitle = new Audio(); bgmTitle.src = BGM_SRC.TITLE; bgmTitle.loop = true; bgmTitle.volume = BGM_VOLUME;
+const bgmStage = new Audio(); bgmStage.src = BGM_SRC.STAGE; bgmStage.loop = true; bgmStage.volume = BGM_VOLUME;
+const bgmBoss  = new Audio(); bgmBoss.src  = BGM_SRC.BOSS;  bgmBoss.loop = true; bgmBoss.volume = BGM_VOLUME;
 let currentBgm = null;
 function playBgm(track){
   if(currentBgm !== track){
@@ -110,14 +112,14 @@ function seNoise(dur, opt={}){
   node.connect(gain).connect(ac.destination);
   src.start(t0);
 }
-const seShot        = ()=> seTone(880, 0.06, {wave:"square", freqEnd:640, vol:0.07});
-const seEnemyPop     = ()=>{ seTone(320, 0.11, {wave:"square", freqEnd:70, vol:0.12}); seNoise(0.08, {vol:0.08, filterFreq:2200, filterType:"bandpass"}); };
-const seHit          = ()=>{ seNoise(0.22, {vol:0.22, filterFreq:900, filterType:"lowpass"}); seTone(160, 0.22, {wave:"sawtooth", freqEnd:50, vol:0.14}); };
-const seBomb         = ()=>{ seTone(90, 0.7, {wave:"sawtooth", freqEnd:760, vol:0.16}); seNoise(0.7, {vol:0.12, filterFreq:1400, filterType:"lowpass"}); };
-const seItem         = ()=>{ seTone(660, 0.08, {wave:"square", vol:0.09}); seTone(990, 0.11, {wave:"square", vol:0.09, delay:0.06}); };
-const seGraze        = ()=> seTone(1500, 0.03, {wave:"square", vol:0.035});
-const seMenuMove     = ()=> seTone(440, 0.045, {wave:"square", vol:0.07});
-const seMenuConfirm  = ()=>{ seTone(660, 0.05, {wave:"square", vol:0.09}); seTone(880, 0.07, {wave:"square", vol:0.09, delay:0.05}); };
+const seShot        = ()=> seTone(880, 0.06, {wave:"square", freqEnd:640, vol:0.10});
+const seEnemyPop     = ()=>{ seTone(320, 0.11, {wave:"square", freqEnd:70, vol:0.19}); seNoise(0.08, {vol:0.13, filterFreq:2200, filterType:"bandpass"}); };
+const seHit          = ()=>{ seNoise(0.22, {vol:0.32, filterFreq:900, filterType:"lowpass"}); seTone(160, 0.22, {wave:"sawtooth", freqEnd:50, vol:0.20}); };
+const seBomb         = ()=>{ seTone(90, 0.7, {wave:"sawtooth", freqEnd:760, vol:0.24}); seNoise(0.7, {vol:0.18, filterFreq:1400, filterType:"lowpass"}); };
+const seItem         = ()=>{ seTone(660, 0.08, {wave:"square", vol:0.14}); seTone(990, 0.11, {wave:"square", vol:0.14, delay:0.06}); };
+const seGraze        = ()=> seTone(1500, 0.03, {wave:"square", vol:0.055});
+const seMenuMove     = ()=> seTone(440, 0.045, {wave:"square", vol:0.11});
+const seMenuConfirm  = ()=>{ seTone(660, 0.05, {wave:"square", vol:0.14}); seTone(880, 0.07, {wave:"square", vol:0.14, delay:0.05}); };
 
 //----------------------------------------------------------------------
 // 入力
