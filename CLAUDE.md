@@ -20,7 +20,8 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
 - 弾: `shot()/nway()/ring()`。opt で `moon`(三日月弾) `word`(文字弾) `seq`(114514数字弾)
   `accel/turn` を指定
 - 汎用雑魚AI: `zakoAI.{diver,crosser,swirler}`。シナリオ固有AIは各シナリオファイルが
-  `zakoAI.xxx = function(e){...}` で追加(fortress→シナリオ1、chiuma/buta→シナリオ2)
+  `zakoAI.xxx = function(e){...}` で追加(fortress→シナリオ1、chiuma/buta→シナリオ2、
+  wannabeM/wannabeF/believer→シナリオ3)
 - ステージ: `at(frame,fn)` でタイムライン構築。2150fで `startDialogue`(会話→ボス)が通例
 - 会話: `game.dialog` が非nullの間ゲーム進行停止。`DIALOG_OVER`(ゲームオーバー)のみエンジン側
 - ボス進行: `nextPhase()` がスペル配列を順に消化。スペル要素のフック:

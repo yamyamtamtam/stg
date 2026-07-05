@@ -256,6 +256,109 @@ HIME_ANGRY[8]  = "..OHHFFFOFFFFOFFFHHO.."  # 眉間にシワ
 HIME_ANGRY[10] = "..OHHFftFFFFFFtfFHHO.."  # 涙目
 HIME_ANGRY[11] = "..OHHFFFFFMMMMFFFHHO.."  # 開いた口(発狂)
 
+WANNABE_M_PAL = {
+ 'O':hex_('1e1a24'),'K':hex_('2e2a34'),'k':hex_('4a4456'),   # 髪(黒・ツヤ)
+ 'S':hex_('e8b88a'),                                          # 肌
+ 'g':hex_('ffd76e'),                                          # 金の目(¥に目がくらむ)
+ 'n':hex_('b07848'),'m':hex_('8c4a38'),                       # 鼻/口
+ 'N':hex_('20304e'),'w':hex_('e8e6e0'),                       # スーツ/シャツ
+}
+WANNABE_M = [  # ワナビー男(お金弾) 14x15
+"..OOOOOOOOOO..",
+".OKKKKKKKKKKO.",
+".OKkKKKKKKkKO.",
+".OKSSSSSSSSKO.",
+".OSSSSSSSSSSO.",
+".OSggSSSSggSO.",
+".OSggSSSSggSO.",
+"..OSSSnSSSO...",
+"..OSSmmmSSO...",
+"..OSSmmmSSO...",
+"...OSSSSSO....",
+"..ONNwwNNNO...",
+".ONNNwwNNNNO..",
+".ONNNwwNNNNO..",
+"..OOOOOOOOO...",
+]
+
+WANNABE_F_PAL = {
+ 'O':hex_('2a1a20'),'K':hex_('c08a5e'),'k':hex_('d8a476'),   # 髪(明るめブラウン)
+ 'S':hex_('f5cfae'),                                          # 肌
+ 'e':hex_('2c1418'),'E':hex_('9a6ab0'),                       # 目/アイシャドウ
+ 'b':hex_('f2a0b0'),'m':hex_('d4506a'),                       # チーク/リップ
+ 'P':hex_('e88fb8'),'w':hex_('fbe8f0'),                       # 服(ピンク)
+}
+WANNABE_F = [  # ワナビー女(美容弾) 14x15
+".OKKOOOOOOKKO.",
+"OKKKKKKKKKKKKO",
+"OKkKKKKKKKKkKO",
+"OKKSSSSSSSSKKO",
+"OKSSSSSSSSSSKO",
+"OKSEeSSSSeESKO",
+"OKSSSSSSSSSSKO",
+"OKbSSSmmSSSbKO",
+"OKKSSSSSSSSKKO",
+".OKSSSSSSSSKO.",
+".OKOSSSSSSOKO.",
+".OKOwwwwwwOKO.",
+"..OPPwwwwPPO..",
+"..OPPPPPPPPO..",
+"...OOOOOOOO...",
+]
+
+SALON_PAL = {
+ 'O':hex_('161a26'),                      # 輪郭
+ 'H':hex_('232838'),'h':hex_('3c445c'),   # 髪(黒髪ツヤ)
+ 'F':hex_('f2c49a'),                      # 肌
+ 'e':hex_('ffffff'),'E':hex_('241a12'),   # 目(見開き)
+ 'n':hex_('c08a5c'),                      # 鼻
+ 'm':hex_('9a4534'),'w':hex_('ffffff'),   # 口(ニカッ)/歯
+ 'S':hex_('2c3d60'),'s':hex_('415988'),   # スーツ(ネイビー)
+ 'W':hex_('f4f2ec'),'v':hex_('d9d6cc'),   # シャツ(白Vネック)
+ 'B':hex_('10141e'),                      # ボタン
+ 'P':hex_('222a40'),'K':hex_('12141a'),   # パンツ/靴
+}
+SALON = [  # オンラインサロン主(見開き目+営業スマイル+ネイビースーツ) 22x38
+"......OOOOOOOOOO......",
+".....OHHHHHHHHHHO.....",
+"....OHhHHHHHHHHHHO....",
+"...OHhhHHHHHHHHHHHO...",
+"...OHhHHHHHHHHHHHHO...",
+"...OHHHHHHHHHHHHHHO...",
+"...OHHOFFFFFFFFOHHO...",
+"...OHFFFFFFFFFFFFHO...",
+"...OHFeeEFFFFeeEFHO...",
+"...OHFeeEFFFFeeEFHO...",
+"...OHFFFFFnnFFFFFHO...",
+"...OHFFmwwwwwwmFFHO...",
+"...OHFFFmmmmmmFFFHO...",
+"....OFFFFFFFFFFFFO....",
+".....OOFFFFFFFFOO.....",
+".......OFFFFFFO.......",
+"..OOSSSOFFFFFFOSSSOO..",
+".OSSSSSOWFFFFWOSSSSSO.",
+".OSSsSSOWWFFWWOSSsSSO.",
+".OSSsSSOWWWWWWOSSsSSO.",
+"OSSsSSOWWWWWWWWOSSsSSO",
+"OSSsSSOWWWWWWWWOSSsSSO",
+"OSSsSSOWWWWWWWWOSSsSSO",
+"OSSsSBOWWWWWWWWOBSsSSO",
+"OSSsSSOWWWWWWWWOSSsSSO",
+"OSSsSSOWWWWWWWWOSSsSSO",
+"OSSsSBOWWWWWWWWOBSsSSO",
+"OSSsSSOWWvvWWWWOSSsSSO",
+"OSSsSSOWWWWWWWWOSSsSSO",
+".OSSSSOWWWWWWWWOSSSSO.",
+".OSSSSOOWWWWWWOOSSSSO.",
+"..OSSSSOOOOOOOOSSSSO..",
+"..OPPPPPPO..OPPPPPPO..",
+"..OPPPPPO....OPPPPPO..",
+"...OPPPPO....OPPPPO...",
+"...OPPPPO....OPPPPO...",
+"..OKKKKKO....OKKKKKO..",
+"...OOOOO......OOOOO...",
+]
+
 # ======================================================================
 def render(rows, pal):
     w, h = len(rows[0]), len(rows)
@@ -312,11 +415,12 @@ def to_b64(im):
     buf = io.BytesIO(); im.save(buf, 'PNG', optimize=True)
     return base64.b64encode(buf.getvalue()).decode()
 
-URARA_LEAN, MISONO_LEAN, HIME_LEAN = 3, 5, 4  # 傾き差分スプライットの最大シフト量(px, EPX後の等倍)
+URARA_LEAN, MISONO_LEAN, HIME_LEAN, SALON_LEAN = 3, 5, 4, 4  # 傾き差分スプライットの最大シフト量(px, EPX後の等倍)
 
 def build():
     urara_im, misono_im = epx(render(URARA, URARA_PAL)), epx(render(MISONO, MISONO_PAL))
     hime_im, hime_angry_im = epx(render(HIME, HIME_PAL)), epx(render(HIME_ANGRY, HIME_PAL))
+    salon_im = epx(render(SALON, SALON_PAL))
     sprites = {
         'urara':       lean(urara_im, 0, URARA_LEAN),
         'urara_left':  lean(urara_im, -URARA_LEAN, URARA_LEAN),
@@ -334,6 +438,11 @@ def build():
         'hime_angry':       lean(hime_angry_im, 0, HIME_LEAN),
         'hime_angry_left':  lean(hime_angry_im, -HIME_LEAN, HIME_LEAN),
         'hime_angry_right': lean(hime_angry_im,  HIME_LEAN, HIME_LEAN),
+        'wannabe_m': epx(render(WANNABE_M, WANNABE_M_PAL)),
+        'wannabe_f': epx(render(WANNABE_F, WANNABE_F_PAL)),
+        'salon':       lean(salon_im, 0, SALON_LEAN),
+        'salon_left':  lean(salon_im, -SALON_LEAN, SALON_LEAN),
+        'salon_right': lean(salon_im,  SALON_LEAN, SALON_LEAN),
     }
     outdir = ROOT / 'assets' / 'sprites'
     outdir.mkdir(parents=True, exist_ok=True)
@@ -351,6 +460,8 @@ def build():
         'URARA_CRY_PORTRAIT': portrait(ROOT/'assets/source/urara_cry.png', 420),
         # オタサーの姫: 立ち絵をそのまま楕円ビネットでクロップ(会話・カットイン用)
         'HIME_PORTRAIT': portrait(ROOT/'assets/source/hime_bust.png', 420),
+        # オンラインサロン主: AI生成の実写写真をそのまま使用(切り抜きなし)
+        'SALON_PORTRAIT': portrait(ROOT/'assets/source/salon_boss.png', 420),
     }
     return sprites, ports
 
@@ -372,11 +483,17 @@ def inject(sprites, ports):
         'HIME_ANGRY_SPRITE':       to_b64(sprites['hime_angry']),
         'HIME_ANGRY_SPRITE_LEFT':  to_b64(sprites['hime_angry_left']),
         'HIME_ANGRY_SPRITE_RIGHT': to_b64(sprites['hime_angry_right']),
+        'WANNABE_M_SPRITE': to_b64(sprites['wannabe_m']),
+        'WANNABE_F_SPRITE': to_b64(sprites['wannabe_f']),
+        'SALON_SPRITE':       to_b64(sprites['salon']),
+        'SALON_SPRITE_LEFT':  to_b64(sprites['salon_left']),
+        'SALON_SPRITE_RIGHT': to_b64(sprites['salon_right']),
         'URARA_PORTRAIT':  to_b64(ports['URARA_PORTRAIT']),
         'MISONO_PORTRAIT': to_b64(ports['MISONO_PORTRAIT']),
         'MISONO_DEFEATED_PORTRAIT': to_b64(ports['MISONO_DEFEATED_PORTRAIT']),
         'URARA_CRY_PORTRAIT': to_b64(ports['URARA_CRY_PORTRAIT']),
         'HIME_PORTRAIT': to_b64(ports['HIME_PORTRAIT']),
+        'SALON_PORTRAIT': to_b64(ports['SALON_PORTRAIT']),
     }
     out = ['// AUTO-GENERATED by tools/build_sprites.py --inject — 手で編集しないこと',
            '"use strict";',
