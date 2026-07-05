@@ -11,11 +11,13 @@ import base64, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# BGM_SRC のキー名 → mp3 ファイル。エンジン側は BGM_SRC.TITLE などで参照する
+# BGM_SRC のキー名 → mp3 ファイル。エンジン側は BGM.<キー> の Audio で参照する
+# (シナリオ定義の bgm:"キー名" でそのシナリオの会話〜ボス撃破のBGMを差し替えられる)
 FILES = {
-    'TITLE': 'assets/audio/bgm_title.mp3',   # タイトル〜チュートリアル
-    'STAGE': 'assets/audio/bgm_stage.mp3',   # 道中
-    'BOSS':  'assets/audio/bgm_boss.mp3',    # ボス戦(みその/オタサーの姫 共通)
+    'TITLE': 'assets/audio/bgm_title.mp3',              # タイトル〜チュートリアル
+    'STAGE': 'assets/audio/bgm_stage.mp3',              # 道中
+    'BOSS':  'assets/audio/bgm_boss.mp3',               # ボス戦(共通)
+    'SINGULARITY': 'assets/audio/bgm_singularity.mp3',  # シナリオ4専用(会話〜撃破まで)
 }
 
 def main():

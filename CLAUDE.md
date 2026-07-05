@@ -6,7 +6,7 @@ classic `<script src>` の読み込み順だけで動く(file://でもGitHub Pag
 
 ## ファイル構成と読み込み順(index.html に定義)
 1. `js/gen/sprites.js` — **自動生成**。base64画像 `SPRITE_SRC` と `IMG.<KEY>`(Image化済み)。手で編集しない
-2. `js/gen/audio.js` — **自動生成**。BGM base64 `BGM_SRC.{TITLE,STAGE,BOSS}`。手で編集しない
+2. `js/gen/audio.js` — **自動生成**。BGM base64 `BGM_SRC.{TITLE,STAGE,BOSS,SINGULARITY}`。手で編集しない
 3. `js/engine.js` — 共通エンジン(下記)
 4. `js/scenarios/scenario*.js` — 各シナリオ。IIFEで包み `registerScenario()` で登録
 5. `js/main.js` — シナリオ選択カード確定 + `loop()` 起動
@@ -32,7 +32,8 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
 - 自機: 扇状ショット(パワー1.0-4.0で1/3/5/7/9本)。スマホオプション2台(slowLerpで横⇔前方)
 - 描画: drawBG(01レイン+グリッチ) → 敵(e.sprite優先) → ボス(浮遊カード) → 自機 → 弾 →
   バナー/カットイン/HUD/会話。敵・ボスのスプライト/立ち絵はシナリオ定義から引く
-- SE: Web Audio APIの8bit風プロシージャル合成。BGM: `updateBgm()` がstate/bossで自動切替
+- SE: Web Audio APIの8bit風プロシージャル合成。BGM: `updateBgm()` がstate/bossで自動切替。
+  シナリオ定義に `bgm:"キー名"` があると会話〜ボス撃破はその曲(BGM追加は build_audio.py の FILES に1行)
 
 ## シナリオの追加手順(1日1シナリオ運用)
 1. `js/scenarios/scenarioN_xxx.js` を新規作成。既存2ファイルが実例で、契約は:

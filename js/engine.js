@@ -4,11 +4,14 @@
 //======================================================================
 
 //--- BGM(タイトル〜チュートリアル / 道中 / ボス戦。ボス戦はみそのとオタサーの姫で共通) ---
-// BGMはSE(Web Audio)より控えめにしてSEが埋もれないようにする
+// BGMはSE(Web Audio)より控えめにしてSEが埋もれないようにする。
+// BGM_SRC(js/gen/audio.js)の全キーを自動でAudio化し BGM.<キー> で参照する
 const BGM_VOLUME = 0.26;
-const bgmTitle = new Audio(); bgmTitle.src = BGM_SRC.TITLE; bgmTitle.loop = true; bgmTitle.volume = BGM_VOLUME;
-const bgmStage = new Audio(); bgmStage.src = BGM_SRC.STAGE; bgmStage.loop = true; bgmStage.volume = BGM_VOLUME;
-const bgmBoss  = new Audio(); bgmBoss.src  = BGM_SRC.BOSS;  bgmBoss.loop = true; bgmBoss.volume = BGM_VOLUME;
+const BGM = {};
+for(const k in BGM_SRC){
+  const a = new Audio(); a.src = BGM_SRC[k]; a.loop = true; a.volume = BGM_VOLUME;
+  BGM[k] = a;
+}
 let currentBgm = null;
 function playBgm(track){
   if(currentBgm !== track){
@@ -19,10 +22,16 @@ function playBgm(track){
   // 初回はジェスチャー前でplay()が拒否されうるので、実際に鳴るまで毎フレーム再試行する
   if(track && track.paused) track.play().catch(()=>{});
 }
-// state/ボスの有無からその場面のBGMを決めて切り替える(タイトル〜チュートリアルは共通、プレイ中は道中/ボス戦を自動切替)
+// state/ボスの有無からその場面のBGMを決めて切り替える(タイトル〜チュートリアルは共通、プレイ中は道中/ボス戦を自動切替)。
+// シナリオが bgm:"キー名" を定義していると、会話パート〜ボス撃破(会話含む)はその曲に差し替わる
 function updateBgm(){
-  if(INTRO_ORDER.includes(game.state)){ playBgm(bgmTitle); return; }
-  if(game.state==="play"){ playBgm(boss ? bgmBoss : bgmStage); return; }
+  if(INTRO_ORDER.includes(game.state)){ playBgm(BGM.TITLE); return; }
+  if(game.state==="play"){
+    const sb = curScenario() && curScenario().bgm;
+    if(sb && (boss || game.dialog)){ playBgm(BGM[sb]); return; }
+    playBgm(boss ? BGM.BOSS : BGM.STAGE);
+    return;
+  }
   playBgm(null);
 }
 

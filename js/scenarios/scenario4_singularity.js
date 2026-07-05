@@ -96,6 +96,7 @@ registerScenario({
   },
   // 自機の無敵時間中(ボム含む)はボスがバリアを貼り自機の攻撃が無効になる(弾消し自体は可能)
   bossBarrierOnInvul: true,
+  bgm: "SINGULARITY", // 専用BGM: 開幕の会話から撃破まで流れ続ける
   dialogPre: DIALOG_PRE,
   get dialogPost(){ return game.diff===0 ? DIALOG_POST_HUMAN : DIALOG_POST_AI; },
   boss: {
