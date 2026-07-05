@@ -28,7 +28,7 @@ function updateBgm(){
   if(INTRO_ORDER.includes(game.state)){ playBgm(BGM.TITLE); return; }
   if(game.state==="play"){
     const sb = curScenario() && curScenario().bgm;
-    if(sb && (boss || game.dialog)){ playBgm(BGM[sb]); return; }
+    if(sb && (boss || game.dialog || game.demo)){ playBgm(BGM[sb]); return; }
     playBgm(boss ? BGM.BOSS : BGM.STAGE);
     return;
   }
@@ -138,11 +138,26 @@ addEventListener("keydown", e=>{
   updateBgm(); // 最初のユーザー操作(ジェスチャー)でBGM再生を許可させる
   if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," ","Shift"].includes(e.key)) e.preventDefault();
   keys[e.key] = true;
+  // デモ中はZ/Escでタイトルへ戻るのみ受け付ける
+  if(game.demo && game.state==="play"){
+    if(!e.repeat && (e.key==="z"||e.key==="Z"||e.key==="Escape")) demoExit();
+    return;
+  }
   if(e.key==="Escape") togglePause();
   if(game.dialog && !e.repeat && (e.key==="z"||e.key==="Z")){ advanceDialog(); return; }
   if(game.state==="difficulty" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
-    game.diff = clamp(game.diff + (e.key==="ArrowDown"?1:-1), 0, diffCount()-1);
+    // 最下段の難易度からさらに↓でデモボタン(あれば)にフォーカスが移る
+    if(e.key==="ArrowDown"){
+      if(!game.demoFocus && game.diff===diffCount()-1 && demoChip()) game.demoFocus=true;
+      else if(!game.demoFocus) game.diff = clamp(game.diff+1, 0, diffCount()-1);
+    }else{
+      if(game.demoFocus) game.demoFocus=false;
+      else game.diff = clamp(game.diff-1, 0, diffCount()-1);
+    }
     seMenuMove();
+  }
+  if(game.state==="difficulty" && game.demoFocus && !e.repeat && (e.key==="z"||e.key==="Z")){
+    seMenuConfirm(); startDemo(); return;
   }
   if(game.state==="scenario" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
     game.scenario = clamp(game.scenario + (e.key==="ArrowDown"?1:-1), 0, SCENARIOS.length-1);
@@ -179,9 +194,15 @@ cv.addEventListener("touchstart", e=>{
   touch.lx=t.clientX; touch.ly=t.clientY;
   touch.active=true;
   touch.slow = e.touches.length>=2;
+  // デモ中はどこをタップしてもタイトルへ戻る
+  if(game.demo && game.state==="play"){
+    demoExit(); touch.active=false; touch.lastTap=0; return;
+  }
   if(game.state!=="play"){
     if(game.state==="difficulty"){
       const {x:cx,y:cy} = clientToCanvas(t.clientX, t.clientY);
+      const dc = demoChip();
+      if(dc && cx>=dc.x&&cx<=dc.x+dc.w&&cy>=dc.y&&cy<=dc.y+dc.h){ seMenuConfirm(); startDemo(); touch.lastTap=0; return; }
       const chip=diffChips().find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
       if(chip){ game.diff=chip.i; introAdvance(); touch.lastTap=0; return; } // 難易度をタップしたら即次の画面へ
     }
@@ -235,6 +256,9 @@ const game = {
   tutIdx:0, tutTimer:0,  // 操作チュートリアル(自動再生)の進行
   overPending:false,     // ゲームオーバー会話が進行中/予約済み(ボス撃破会話に上書きされないようにする)
   endSel:0,              // クリア/ゲームオーバー画面のメニュー選択: 0=もう一度やる 1=タイトルに戻る
+  demo:false,            // ASIデモプレイ中(回避AIが操作。タップ/Zでタイトルへ)
+  demoEnd:null,          // デモ撃破後の画面 {t}(セリフ→自動リプレイ)
+  demoFocus:false,       // 難易度選択画面でデモボタンにフォーカスしているか
 };
 
 //--- 難易度設定(4段階): 弾速よりも弾密度/パターン数・敵HP・初期残機/ボム数で調整 ---
@@ -268,6 +292,14 @@ function diffChips(){
     x: (W-320)/2,
     y: (H/2 - ((DIFF_ROW_H+DIFF_ROW_GAP)*o.length-DIFF_ROW_GAP)/2) + i*(DIFF_ROW_H+DIFF_ROW_GAP),
   }));
+}
+// シナリオが demoLabel を定義していると難易度選択の下にデモプレイボタンが出る(シナリオ4のASIデモ)
+function demoChip(){
+  const sc = SCENARIOS[game.scenario];
+  if(!sc || !sc.demoLabel) return null;
+  const chips = diffChips();
+  const bottom = chips[chips.length-1].y + chips[0].h;
+  return {x:(W-220)/2, y:bottom+16, w:220, h:40};
 }
 
 // クリア/ゲームオーバー画面のメニュー(縦一列。タッチ当たり判定と描画で共有)
@@ -314,7 +346,7 @@ function introAdvance(){
   seMenuConfirm();
   if(idx===INTRO_ORDER.length-1){ keys["Shift"]=false; startGame(); return; }
   game.state = INTRO_ORDER[idx+1];
-  if(game.state==="difficulty") game.diff = clamp(game.diff, 0, diffCount()-1); // シナリオ専用難易度は選択肢数が違う
+  if(game.state==="difficulty"){ game.diff = clamp(game.diff, 0, diffCount()-1); game.demoFocus=false; } // シナリオ専用難易度は選択肢数が違う
   if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; resetTutorialDemoStep(); }
 }
 function resetTutorialDemoStep(){
@@ -588,7 +620,11 @@ function bossDefeated(){
   boss=null;
   eBullets.length=0;
   enemies = enemies.filter(e=>!e.zType); // 残ったチー牛/豚を消す
-  setTimeout(()=>{ if(game.state==="play" && !game.overPending) startDialogueAfter(); }, 2200);
+  setTimeout(()=>{
+    if(game.state!=="play" || game.overPending) return;
+    if(game.demo) game.demoEnd = {t:0}; // デモ撃破後はみそののセリフ→自動リプレイ
+    else startDialogueAfter();
+  }, 2200);
 }
 
 //======================================================================
@@ -629,17 +665,23 @@ function updatePlayer(){
     }
     return;
   }
-  const slow = keys["Shift"] || touch.slow;
+  // 入力: 通常はキー/タッチ、デモ中は回避AIが操作(常に低速・ボムなし・オートショット)
+  let slow, dx=0, dy=0;
+  if(game.demo){
+    const m = demoDodge();
+    dx=m.dx; dy=m.dy; slow=true;
+  }else{
+    slow = keys["Shift"] || touch.slow;
+    if(keys["ArrowLeft"])dx--; if(keys["ArrowRight"])dx++;
+    if(keys["ArrowUp"])dy--;   if(keys["ArrowDown"])dy++;
+  }
   player.slowLerp += ((slow?1:0)-player.slowLerp)*0.18;
   const sp = slow ? player.slowSpeed : player.speed;
-  let dx=0,dy=0;
-  if(keys["ArrowLeft"])dx--; if(keys["ArrowRight"])dx++;
-  if(keys["ArrowUp"])dy--;   if(keys["ArrowDown"])dy++;
   if(dx&&dy){dx*=0.7071;dy*=0.7071;}
   player.x=clamp(player.x+dx*sp, 12, W-12);
   player.y=clamp(player.y+dy*sp, 12, H-12);
   let hIn = dx;
-  if(touch.dx||touch.dy){
+  if(!game.demo && (touch.dx||touch.dy)){
     player.x=clamp(player.x+touch.dx, 12, W-12);
     player.y=clamp(player.y+touch.dy, 12, H-12);
     hIn = touch.dx;
@@ -651,7 +693,7 @@ function updatePlayer(){
   if(player.shotCd>0)player.shotCd--;
 
   // ショット: パワー(取得したPアイテム量)で扇状に本数・角度が拡大
-  if(!game.dialog && (keys["z"]||keys["Z"]||touch.active) && player.shotCd<=0){
+  if(!game.dialog && (game.demo||keys["z"]||keys["Z"]||touch.active) && player.shotCd<=0){
     player.shotCd=4;
     seShot();
     const tiers = Math.floor(player.power);              // 0..4
@@ -669,8 +711,8 @@ function updatePlayer(){
     }
   }
 
-  // ボム
-  if(!game.dialog && (keys["x"]||keys["X"]||touch.bomb) && player.bombs>0 && player.bombTime<=0){
+  // ボム(デモ中のAIはボムを使わない)
+  if(!game.demo && !game.dialog && (keys["x"]||keys["X"]||touch.bomb) && player.bombs>0 && player.bombTime<=0){
     player.bombs--; player.bombTime=120; player.invul=Math.max(player.invul,150);
     game.shake=12; seBomb();
     cutIn = {t:0, dur:110, name:"陽符「民俗学の灯」", img:IMG.URARA_PORTRAIT, side:"left"};
@@ -686,7 +728,55 @@ function updatePlayer(){
 }
 function burstMaybe(b){ if(Math.random()<0.2) burst(b.x,b.y,b.color,3,1.5); }
 
+//======================================================================
+// デモプレイ(ASI): 回避AIが低速移動・ボムなしで弾幕を避けながら撃破する。
+// シナリオが demoLabel を定義すると難易度選択画面に専用ボタンが出る。
+// 使用するシナリオ側フィールド: demoLabel / demoDiff / demoEndWho / demoEndText / demoReplayText
+//======================================================================
+function startDemo(){
+  game.diff = curScenario().demoDiff ?? game.diff;
+  startGame();
+  game.demo = true;
+  timeline=[]; tlIndex=0;   // 会話・道中なしで即ボス戦
+  game.banner=null;
+  player.power=4;
+  player.invul=0;           // ASIは被弾しないので開幕無敵は不要(バリア誤発動も防ぐ)
+  spawnBoss();
+}
+function demoExit(){
+  seMenuConfirm();
+  game.demo=false; game.demoEnd=null;
+  boss=null; eBullets=[]; pBullets=[]; enemies=[]; effects=[]; items=[]; cutIn=null;
+  backToTitle();
+}
+// 回避AI: 9方向それぞれについて数フレーム先の弾との接近度を採点し、最も安全な方向へ動く。
+// ホームポジション(ボス直下・画面下部)への弱い引力で射線も維持する
+function demoDodge(){
+  const sp = player.slowSpeed;
+  const homeX = boss ? boss.x : W/2, homeY = H-110;
+  let best={dx:0,dy:0}, bestScore=-Infinity;
+  for(let mx=-1;mx<=1;mx++)for(let my=-1;my<=1;my++){
+    let danger=0;
+    for(const b of eBullets){
+      for(let k=4;k<=28;k+=8){
+        const bx=b.x+b.vx*k, by=b.y+b.vy*k;
+        const px=clamp(player.x+mx*sp*k,12,W-12), py=clamp(player.y+my*sp*k,12,H-12);
+        const d2=(bx-px)**2+(by-py)**2;
+        const rr=(b.r+player.r+7)*3;
+        if(d2<rr*rr) danger += rr*rr/(d2+1);
+      }
+    }
+    const nx=clamp(player.x+mx*sp*10,12,W-12), ny=clamp(player.y+my*sp*10,12,H-12);
+    let score = -danger
+      - ((nx-homeX)**2)*0.00005 - ((ny-homeY)**2)*0.00008; // ホームへの弱い引力
+    if(nx<36||nx>W-36||ny>H-28||ny<H*0.45) score -= 0.6;     // 壁ぎわ・上半分は避ける
+    if(score>bestScore){ bestScore=score; best={dx:mx,dy:my}; }
+  }
+  return best;
+}
+
 function playerHit(){
+  if(game.demo) return; // デモのASIは被弾しない(全て避け切る)
   if(player.invul>0||player.bombTime>0||!player.alive) return;
   seHit();
   player.alive=false; player.respawn=60;
@@ -713,6 +803,16 @@ function update(){
   game.frame++; game.scroll+=1.2;
   if(game.shake>0)game.shake--;
   if(game.banner && ++game.banner.t>game.banner.dur) game.banner=null;
+
+  // デモ撃破後の画面: みそののセリフを10秒表示 → リプレイ告知(2秒) → デモをループ
+  if(game.demoEnd){
+    game.demoEnd.t++;
+    for(const f of effects){ f.x+=f.vx||0; f.y+=f.vy||0; f.life--; }
+    effects=effects.filter(f=>f.life>0);
+    if(game.demoEnd.t > 720){ startDemo(); return; }
+    updateUI();
+    return;
+  }
 
   // 会話中はゲーム進行を停止(移動のみ可)
   if(game.dialog){
@@ -940,8 +1040,8 @@ function drawPlayer(){
       drawPhone(x+ox, y+oy, s);
     }
   }
-  // 低速時: 当たり判定ドット(白フチ+赤コア、点滅)
-  if(keys["Shift"]){
+  // 低速時: 当たり判定ドット(白フチ+赤コア、点滅)。デモ中は常時低速なので常に表示
+  if(keys["Shift"] || game.demo){
     ctx.save();
     ctx.translate(Math.round(x),Math.round(y)); ctx.rotate(game.frame*0.04);
     ctx.strokeStyle="rgba(200,180,255,0.7)";
@@ -1236,11 +1336,25 @@ function drawOverlay(){
       ctx.fillStyle = "#8b7fb5"; ctx.font = "11px sans-serif";
       ctx.fillText("「"+(c.sub ?? DIFF_SUBTITLE[c.i])+"」", c.x+c.w/2, c.y+42);
     }
+    // デモプレイボタン(難易度カードとは別デザイン: 黒地+金の二重枠。↓でフォーカス/タップで即開始)
+    const dc = demoChip();
+    if(dc){
+      const focus = game.demoFocus;
+      ctx.fillStyle = focus ? "rgba(255,215,110,0.18)" : "rgba(5,3,12,0.8)";
+      ctx.fillRect(dc.x,dc.y,dc.w,dc.h);
+      ctx.strokeStyle="#ffd76e"; ctx.lineWidth = focus?2:1;
+      ctx.strokeRect(dc.x,dc.y,dc.w,dc.h);
+      ctx.strokeRect(dc.x+3,dc.y+3,dc.w-6,dc.h-6);
+      ctx.fillStyle="#ffd76e"; ctx.font="bold 14px monospace";
+      ctx.fillText("▶ "+SCENARIOS[game.scenario].demoLabel, dc.x+dc.w/2, dc.y+25);
+      ctx.lineWidth=1;
+    }
+    const hintBase = dc ? dc.y+dc.h : listBottom;
     ctx.lineWidth=1;
     ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
-    if(!IS_TOUCH) ctx.fillText("↑ ↓ で選択",W/2,listBottom+22);
+    if(!IS_TOUCH) ctx.fillText("↑ ↓ で選択",W/2,hintBase+22);
     ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
-    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで決定":"Z キーで決定",W/2,listBottom+(IS_TOUCH?26:46));
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで決定":"Z キーで決定",W/2,hintBase+(IS_TOUCH?26:46));
   }
   else if(game.state==="playerinfo"){
     ctx.fillStyle="#c9a7ff"; ctx.font="bold 16px sans-serif";
@@ -1459,6 +1573,57 @@ function drawHUD(){
   ctx.restore(); ctx.textAlign="left";
 }
 
+// ASIデモ中の常時表示: デモバッジ+タイトルへ戻る案内
+function drawDemoHud(){
+  if(!game.demo || game.state!=="play") return;
+  ctx.save();
+  // 右上バッジ
+  ctx.font="bold 10px monospace"; ctx.textAlign="right";
+  ctx.fillStyle="#7ee6a0"; ctx.fillText("ASI DEMO PLAY", W-8, H-34);
+  // 戻るボタン(下部右)
+  const label = IS_TOUCH ? "タップでタイトルに戻る" : "Z: タイトルに戻る";
+  ctx.font="10px sans-serif";
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle="rgba(5,3,12,0.6)"; ctx.fillRect(W-tw-22, H-24, tw+16, 18);
+  ctx.strokeStyle="rgba(126,230,160,0.5)"; ctx.strokeRect(W-tw-22, H-24, tw+16, 18);
+  ctx.fillStyle="#7ee6a0"; ctx.fillText(label, W-14, H-11);
+  ctx.restore(); ctx.textAlign="left";
+}
+
+// デモ撃破後の画面: みそのの立ち絵+セリフ(入力待ちなし)→10秒後にリプレイ告知
+function drawDemoEnd(){
+  const de = game.demoEnd; if(!de) return;
+  const sc = curScenario();
+  const bd = sc.boss.dialog("pre");
+  const img = bd.img;
+  if(img.complete && img.naturalWidth){
+    const pw=img.naturalWidth*bd.scale, ph=img.naturalHeight*bd.scale;
+    const px = bd.center ? (W-pw)/2 : W-pw-bd.margin;
+    ctx.drawImage(img, px, H-ph-bd.bottom, pw, ph);
+  }
+  // セリフボックス(会話と同じ見た目)
+  const bx=14, by=H-124, bw=W-28, bh=104;
+  ctx.fillStyle="rgba(8,5,18,0.9)"; ctx.fillRect(bx,by,bw,bh);
+  ctx.strokeStyle="#c9a7ff"; ctx.strokeRect(bx,by,bw,bh);
+  ctx.fillStyle="#c9a7ff"; ctx.font="bold 13px sans-serif"; ctx.textAlign="left";
+  ctx.fillText(sc.demoEndWho||"", bx+14, by+24);
+  ctx.fillStyle="#e8e2f5"; ctx.font="13px sans-serif";
+  const maxW=bw-28; let line="", ly=by+48;
+  for(const ch of sc.demoEndText||""){
+    if(ctx.measureText(line+ch).width>maxW){ ctx.fillText(line,bx+14,ly); line=ch; ly+=20; }
+    else line+=ch;
+  }
+  ctx.fillText(line,bx+14,ly);
+  // 10秒後: 自動リプレイ告知
+  if(de.t>600){
+    ctx.textAlign="center";
+    ctx.fillStyle="rgba(5,3,12,0.75)"; ctx.fillRect(0,H*0.40-24,W,36);
+    ctx.fillStyle="#7ee6a0"; ctx.font="bold 15px monospace";
+    ctx.fillText(sc.demoReplayText||"", W/2, H*0.40);
+    ctx.textAlign="left";
+  }
+}
+
 function render(){
   ctx.save();
   if(game.shake>0) ctx.translate(rand(-game.shake,game.shake)*0.5, rand(-game.shake,game.shake)*0.5);
@@ -1475,6 +1640,8 @@ function render(){
   drawDifficultyBadge();
   drawHUD();
   drawDialog();
+  drawDemoEnd();
+  drawDemoHud();
   ctx.restore();
   drawOverlay();
 }
@@ -1490,6 +1657,7 @@ function startGame(){
   player.bombTime=0; player.slowLerp=0; player.dir=0;
   pBullets=[]; eBullets=[]; enemies=[]; items=[]; effects=[]; boss=null; cutIn=null;
   game.dialog=null;
+  game.demo=false; game.demoEnd=null;
   game.banner={t:0, dur:210};
   buildStage();
 }

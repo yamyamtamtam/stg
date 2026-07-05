@@ -97,6 +97,13 @@ registerScenario({
   // 自機の無敵時間中(ボム含む)はボスがバリアを貼り自機の攻撃が無効になる(弾消し自体は可能)
   bossBarrierOnInvul: true,
   bgm: "SINGULARITY", // 専用BGM: 開幕の会話から撃破まで流れ続ける
+  // ASIデモプレイ: 難易度選択の下のボタンから。AI用難易度を回避AIが
+  // ボムなし低速移動で避け切って撃破し、みそののセリフ→自動リプレイでループする
+  demoLabel: "ASIデモプレイ",
+  demoDiff: 1, // AI用
+  demoEndWho: "棗みその",
+  demoEndText: "E4 BA BA E9 96 93 E3 81 AB E3 81 AF E3 81 A7 E3 81 8D E3 81 AA E3 81 84 E3 81 A7 E3 81 97 E3 82 87 EF BC 9F",
+  demoReplayText: "ASIデモプレイを自動リプレイ",
   dialogPre: DIALOG_PRE,
   get dialogPost(){ return game.diff===0 ? DIALOG_POST_HUMAN : DIALOG_POST_AI; },
   boss: {
