@@ -177,7 +177,7 @@ addEventListener("keyup", e=> keys[e.key]=false);
 
 //--- タッチ操作(スマホ): ドラッグで移動 / ダブルタップでボム / 2本指で低速 ---
 const IS_TOUCH = matchMedia("(pointer:coarse)").matches || "ontouchstart" in window;
-const touch = {active:false, slow:false, bomb:false, dx:0, dy:0, lastTap:0, lx:0, ly:0};
+const touch = {active:false, slow:false, bomb:false, dx:0, dy:0, lastTap:0, lx:0, ly:0, primaryId:null};
 // canvasはobject-fit:containで表示されるため、CSSボックスと実際の描画領域がズレる(上下/左右に余白ができる)。
 // クライアント座標→canvas座標の変換はそのズレを差し引く必要がある。
 function clientToCanvas(clientX, clientY){
@@ -191,7 +191,9 @@ cv.addEventListener("touchstart", e=>{
   updateBgm(); // 最初のユーザー操作(ジェスチャー)でBGM再生を許可させる
   e.preventDefault();
   const t=e.touches[0];
-  touch.lx=t.clientX; touch.ly=t.clientY;
+  // ドラッグ移動の基準にする指(primary)は最初の1本だけ記録する。既に1本触れている状態で
+  // 2本目が追加された時にここを上書きすると、後で片方を離した瞬間に基準がすり替わってワープする
+  if(touch.primaryId===null){ touch.primaryId=t.identifier; touch.lx=t.clientX; touch.ly=t.clientY; }
   touch.active=true;
   touch.slow = e.touches.length>=2;
   // デモ中はどこをタップしてもタイトルへ戻る
@@ -228,7 +230,9 @@ cv.addEventListener("touchstart", e=>{
 },{passive:false});
 cv.addEventListener("touchmove", e=>{
   e.preventDefault();
-  const t=e.touches[0];
+  // 移動量はprimaryの指(identifierで特定)だけを追う。touches[0]は指を離すと別の指に
+  // すり替わることがあるため、単純にtouches[0]を使うと乗り換え時に瞬間移動してしまう
+  const t = Array.prototype.find.call(e.touches, x=>x.identifier===touch.primaryId) || e.touches[0];
   const { scale } = clientToCanvas(t.clientX, t.clientY);
   touch.dx += (t.clientX-touch.lx)/scale*1.15;
   touch.dy += (t.clientY-touch.ly)/scale*1.15;
@@ -237,8 +241,14 @@ cv.addEventListener("touchmove", e=>{
 },{passive:false});
 cv.addEventListener("touchend", e=>{
   e.preventDefault();
-  if(e.touches.length===0){ touch.active=false; touch.slow=false; }
-  else touch.slow = e.touches.length>=2;
+  if(e.touches.length===0){ touch.active=false; touch.slow=false; touch.primaryId=null; return; }
+  touch.slow = e.touches.length>=2;
+  // primaryの指を離した場合、残った指を新しい基準にする。位置はその指の"今の座標"に
+  // リセットするだけでdx/dyには加算しない(離す前との差分を取らないので瞬間移動しない)
+  if(Array.prototype.some.call(e.changedTouches, x=>x.identifier===touch.primaryId)){
+    const nt=e.touches[0];
+    touch.primaryId=nt.identifier; touch.lx=nt.clientX; touch.ly=nt.clientY;
+  }
 },{passive:false});
 
 //----------------------------------------------------------------------
