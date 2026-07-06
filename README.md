@@ -53,6 +53,10 @@ assets/sprites/             生成済みドット絵のプレビュー(EPX適用
 assets/audio/               BGM音源(mp3。タイトル/道中/ボス戦)
 tools/build_sprites.py      ドット絵の再生成 → js/gen/sprites.js を書き出し
 tools/build_audio.py        BGM → js/gen/audio.js を書き出し
+tools/build_icons.py        棗みその立ち絵の顔周りを切り抜いて assets/icons/ のPWAアイコン一式を生成
+manifest.json                PWAマニフェスト(インストール時タイトルは「IT STG」)
+sw.js                        PWAオフラインキャッシュ用Service Worker
+assets/icons/                生成済みPWAアイコン(favicon/apple-touch-icon/maskable等)
 ```
 
 ## シナリオの追加方法
@@ -78,3 +82,8 @@ tools/build_audio.py        BGM → js/gen/audio.js を書き出し
   汎用雑魚AI(zakoAI) → ステージタイムライン(at/buildStage) → 会話 → ボス進行(nextPhase) →
   描画(drawBG/drawPlayer/drawBoss/drawBullets/drawDialog...)
 - GitHub Pages にそのままデプロイ可能(静的ファイルのみ。Settings → Pages でブランチを指定するだけ)
+- PWA対応済み(ホーム画面に追加可能・sw.jsでオフラインキャッシュ)。アイコンを差し替えたら:
+  ```bash
+  python3 tools/build_icons.py
+  ```
+  キャッシュ対象ファイルを変えた場合は `sw.js` の `CACHE` バージョンも上げること

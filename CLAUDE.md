@@ -70,6 +70,10 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
 - BGM: `assets/audio/bgm_{title,stage,boss}.mp3` → `python3 tools/build_audio.py`
   (js/gen/audio.js を再生成)
 - assets/sprites/ は生成物のプレビュー用。ゲームは js/gen/sprites.js の base64 を参照する
+- PWA: `manifest.json`(インストール時タイトルは「IT STG」)+ `sw.js`(オフラインキャッシュ)。
+  アイコンは `tools/build_icons.py` が棗みその立ち絵(assets/source/misono_full.png)の顔周りを
+  切り抜いて assets/icons/ に生成する。`sw.js` のキャッシュ対象リストを変えたら `CACHE` の
+  バージョン番号を上げること
 
 ## 規約・注意
 - 描画はドット絵部分で `imageSmoothingEnabled=false` + 整数座標(Math.round)

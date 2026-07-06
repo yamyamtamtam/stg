@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <title>インターネット民俗STG</title>
 <link rel="stylesheet" href="css/style.css">
+<!-- PWA: マニフェスト本体のタイトルは"IT STG"(manifest.json / apple-mobile-web-app-title) -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0714">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IT STG">
 </head>
 <body>
 <div id="wrap">
@@ -39,5 +48,11 @@
 <script src="js/scenarios/scenario3_salon.js"></script>
 <script src="js/scenarios/scenario4_singularity.js"></script>
 <script src="js/main.js"></script>
+<script>
+// PWA: オフラインキャッシュ用Service Worker登録(対応環境のみ、失敗しても無視)
+if("serviceWorker" in navigator){
+  addEventListener("load", ()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+</script>
 </body>
 </html>
