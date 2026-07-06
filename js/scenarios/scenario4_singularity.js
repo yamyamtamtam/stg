@@ -99,7 +99,7 @@ registerScenario({
   bgm: "SINGULARITY", // 専用BGM: 開幕の会話から撃破まで流れ続ける
   // ASIデモプレイ: 難易度選択の下のボタンから。AI用難易度を回避AIが
   // ボムなし低速移動で避け切って撃破し、みそののセリフ→自動リプレイでループする
-  demoLabel: "ASIデモプレイ",
+  demoLabel: "ASIデモプレイ(人間の限界を超えろ！)",
   demoDiff: 1, // AI用
   // デモ中の自機表示: 棗みその後ろ姿(通常のうららの代わりに使う)
   demoPlayerSprite: dir => dir<0 ? IMG.MISONO_BACK_SPRITE_LEFT : dir>0 ? IMG.MISONO_BACK_SPRITE_RIGHT : IMG.MISONO_BACK_SPRITE,

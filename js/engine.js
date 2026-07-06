@@ -303,13 +303,16 @@ function diffChips(){
     y: (H/2 - ((DIFF_ROW_H+DIFF_ROW_GAP)*o.length-DIFF_ROW_GAP)/2) + i*(DIFF_ROW_H+DIFF_ROW_GAP),
   }));
 }
-// シナリオが demoLabel を定義していると難易度選択の下にデモプレイボタンが出る(シナリオ4のASIデモ)
+// シナリオが demoLabel を定義していると難易度選択の下にデモプレイボタンが出る(シナリオ4のASIデモ)。
+// ラベルが長い場合は220pxの最小幅からはみ出さないよう文字幅に合わせて広げる
 function demoChip(){
   const sc = SCENARIOS[game.scenario];
   if(!sc || !sc.demoLabel) return null;
   const chips = diffChips();
   const bottom = chips[chips.length-1].y + chips[0].h;
-  return {x:(W-220)/2, y:bottom+16, w:220, h:40};
+  ctx.font="bold 14px monospace";
+  const w = Math.max(220, ctx.measureText("▶ "+sc.demoLabel).width + 40);
+  return {x:(W-w)/2, y:bottom+16, w, h:40};
 }
 
 // クリア/ゲームオーバー画面のメニュー(縦一列。タッチ当たり判定と描画で共有)
