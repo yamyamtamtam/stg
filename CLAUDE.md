@@ -74,6 +74,9 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
   アイコンは `tools/build_icons.py` が棗みその立ち絵(assets/source/misono_full.png)の顔周りを
   切り抜いて assets/icons/ に生成する。`sw.js` のキャッシュ対象リストを変えたら `CACHE` の
   バージョン番号を上げること
+- OGP: index.html の og:*/twitter:* メタタグ + `tools/build_ogp.py` が生成する assets/ogp.png
+  (棗みその立ち絵+タイトルの合成)。og:image は GitHub Pages の絶対URL決め打ちなので、
+  リポジトリ移転時は index.html 側のURLも直すこと
 
 ## 規約・注意
 - 描画はドット絵部分で `imageSmoothingEnabled=false` + 整数座標(Math.round)

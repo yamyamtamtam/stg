@@ -54,9 +54,11 @@ assets/audio/               BGM音源(mp3。タイトル/道中/ボス戦)
 tools/build_sprites.py      ドット絵の再生成 → js/gen/sprites.js を書き出し
 tools/build_audio.py        BGM → js/gen/audio.js を書き出し
 tools/build_icons.py        棗みその立ち絵の顔周りを切り抜いて assets/icons/ のPWAアイコン一式を生成
+tools/build_ogp.py          棗みその立ち絵+タイトルを合成して assets/ogp.png (OGP画像) を生成
 manifest.json                PWAマニフェスト(インストール時タイトルは「IT STG」)
 sw.js                        PWAオフラインキャッシュ用Service Worker
 assets/icons/                生成済みPWAアイコン(favicon/apple-touch-icon/maskable等)
+assets/ogp.png                生成済みOGP画像(SNS共有時のリンクプレビュー用)
 ```
 
 ## シナリオの追加方法
@@ -87,3 +89,7 @@ assets/icons/                生成済みPWAアイコン(favicon/apple-touch-ico
   python3 tools/build_icons.py
   ```
   キャッシュ対象ファイルを変えた場合は `sw.js` の `CACHE` バージョンも上げること
+- OGP対応済み(index.htmlのog:*/twitter:*メタタグ)。画像を差し替えたら:
+  ```bash
+  python3 tools/build_ogp.py
+  ```

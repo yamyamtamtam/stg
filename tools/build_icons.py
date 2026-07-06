@@ -17,6 +17,8 @@ OUT = ROOT / 'assets' / 'icons'
 
 # 立ち絵から顔〜パーカーの月マークあたりまでを正方形クロップ(元画像1024x1536中の座標)
 FACE_CROP = (272, 40, 752, 520)
+# favicon用: 32/16pxでも顔だとわかるよう、髪を減らして目〜顎にもっと寄ったクロップ
+FAVICON_CROP = (350, 150, 670, 470)
 
 # 背景色: index.html の --bg / #wrap の box-shadow の色に合わせたラジアルグラデーション
 BG_INNER = (46, 27, 74)   # 中心のほんのり明るい紫(box-shadow #1d0f3a寄り)
@@ -43,6 +45,7 @@ def make_icon(face, size, subject_ratio):
 def main():
     src = Image.open(ROOT / 'assets/source/misono_full.png').convert('RGBA')
     face = src.crop(FACE_CROP)  # 480x480, 背景は既に透過(アルファ0)
+    face_tight = src.crop(FAVICON_CROP)  # favicon用のより顔に寄ったクロップ
     OUT.mkdir(parents=True, exist_ok=True)
 
     # 通常アイコン(purpose:any): 余白控えめ
@@ -62,9 +65,9 @@ def main():
     im.save(OUT / 'apple-touch-icon-180.png')
     print('icons/apple-touch-icon-180.png', im.size)
 
-    # ブラウザタブ用favicon(小さいので顔を大きめに)
+    # ブラウザタブ用favicon: 顔に寄ったクロップ+ほぼ余白なしで、極小サイズでも顔だとわかるように
     for size in (32, 16):
-        im = make_icon(face, size, subject_ratio=0.98)
+        im = make_icon(face_tight, size, subject_ratio=1.0)
         im.save(OUT / f'favicon-{size}.png')
         print(f'icons/favicon-{size}.png {im.size}')
 
