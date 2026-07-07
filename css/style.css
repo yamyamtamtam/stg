@@ -37,7 +37,15 @@
     border-top:1px solid #2a2144; padding-top:12px;
   }
   #keys b{color:#a99ad4; display:inline-block; width:52px; font-family:monospace}
-  @media (max-width:740px), (pointer:coarse){
+  /* スマホ的レイアウト(サイドパネル非表示+全画面キャンバス)になる条件:
+     - 狭い画面(PCウィンドウを小さくした場合も含む)
+     - タッチデバイスの縦向き(スマホ縦・タブレット縦)
+     - タッチデバイスの横向きでも幅が狭い場合(スマホ横)
+     タブレット横向き(pointer:coarse かつ landscape かつ十分広い)はここに当てはまらず、
+     PCと同じサイドパネル付きレイアウトのまま(操作自体はタッチのままでよい) */
+  @media (max-width:740px),
+         (pointer:coarse) and (orientation:portrait),
+         (pointer:coarse) and (orientation:landscape) and (max-width:999px){
     #side{display:none}
     #wrap{border:none; box-shadow:none}
     canvas{width:100vw; height:100vh; object-fit:contain}

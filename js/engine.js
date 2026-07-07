@@ -177,6 +177,14 @@ addEventListener("keyup", e=> keys[e.key]=false);
 
 //--- タッチ操作(スマホ): ドラッグで移動 / ダブルタップでボム / 2本指で低速 ---
 const IS_TOUCH = matchMedia("(pointer:coarse)").matches || "ontouchstart" in window;
+// css/style.css の「サイドパネルを隠す」メディアクエリと同じ条件をJS側でも判定する。
+// タブレット横向きはこれに当てはまらずサイドパネル付き(PCと同じ画面)になるので、
+// キャンバス内の重複したHUDバー(drawHUD)をそちらでは出さないようにするために使う
+const PHONE_LAYOUT_MQL = matchMedia(
+  "(max-width:740px), (pointer:coarse) and (orientation:portrait), (pointer:coarse) and (orientation:landscape) and (max-width:999px)"
+);
+let PHONE_LAYOUT = PHONE_LAYOUT_MQL.matches;
+PHONE_LAYOUT_MQL.addEventListener("change", e => { PHONE_LAYOUT = e.matches; });
 const touch = {active:false, slow:false, bomb:false, dx:0, dy:0, lastTap:0, lx:0, ly:0, primaryId:null};
 // canvasはobject-fit:containで表示されるため、CSSボックスと実際の描画領域がズレる(上下/左右に余白ができる)。
 // クライアント座標→canvas座標の変換はそのズレを差し引く必要がある。
@@ -1579,7 +1587,8 @@ function drawDifficultyBadge(){
 }
 
 function drawHUD(){
-  if(!IS_TOUCH || game.state!=="play" || game.dialog) return;
+  // サイドパネルが見えている時(タブレット横=PCと同じ画面)は情報が重複するので出さない
+  if(!IS_TOUCH || !PHONE_LAYOUT || game.state!=="play" || game.dialog) return;
   ctx.save();
   ctx.fillStyle="rgba(5,3,12,0.55)"; ctx.fillRect(0,H-24,W,24);
   ctx.font="bold 12px monospace"; ctx.textAlign="left";
