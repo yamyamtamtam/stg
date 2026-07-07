@@ -1693,9 +1693,24 @@ function togglePause(){
   if(game.state==="play") game.paused=!game.paused;
 }
 
-function loop(){
-  if(game.state==="play" && !game.paused) update();
-  else { game.frame++; updateIntro(); }
+// ゲームは全ロジックがフレーム単位(60fps前提)で書かれているため、requestAnimationFrameを
+// そのままティックに使うと高リフレッシュレート端末(120Hz等のタブレットに多い)で処理が
+// その倍率だけ速くなってしまう。実時間を計測し、常に60ティック/秒になるよう
+// 固定タイムステップ+アキュムレータでupdate()の呼び出し回数を補正する
+const TICK_MS = 1000/60;
+let loopLastTime = null, loopAccumulator = 0;
+function loop(now){
+  if(now===undefined) now = performance.now(); // main.jsからの初回呼び出しは引数なし
+  if(loopLastTime===null) loopLastTime = now;
+  let delta = now - loopLastTime;
+  loopLastTime = now;
+  if(delta > 250) delta = 250; // タブ切り替え復帰等の大ジャンプで一気に追いつこうとしないよう上限
+  loopAccumulator += delta;
+  while(loopAccumulator >= TICK_MS){
+    if(game.state==="play" && !game.paused) update();
+    else { game.frame++; updateIntro(); }
+    loopAccumulator -= TICK_MS;
+  }
   updateBgm();
   render();
   requestAnimationFrame(loop);
