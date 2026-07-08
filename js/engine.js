@@ -70,6 +70,49 @@ const TAU = Math.PI * 2;
 const rand = (a,b)=>a+Math.random()*(b-a);
 const clamp = (v,a,b)=>v<a?a:v>b?b:v;
 
+//--- 単語弾(文字列弾)スプライト: 色/文字列ごとにキャッシュ ---
+// 縁取り文字は毎フレームstrokeText+fillTextすると弾数増加時に非常に重いため、
+// moonSprite同様に一度だけラスタライズしてdrawImageで使い回す
+const wordSpriteCache = new Map();
+function wordSprite(word, color){
+  const key = word+"|"+color;
+  let c = wordSpriteCache.get(key); if(c) return c;
+  const meas=document.createElement("canvas").getContext("2d");
+  meas.font="bold 12px sans-serif";
+  const tw = Math.ceil(meas.measureText(word).width);
+  const w = tw+16, h = 20;
+  c=document.createElement("canvas"); c.width=w; c.height=h;
+  const g=c.getContext("2d");
+  g.font="bold 12px sans-serif"; g.textAlign="center"; g.textBaseline="middle";
+  g.lineWidth=3; g.strokeStyle="rgba(5,3,12,0.9)";
+  g.strokeText(word, w/2, h/2);
+  g.fillStyle=color; g.fillText(word, w/2, h/2);
+  wordSpriteCache.set(key,c); return c;
+}
+//--- 数字弾スプライト: 数字ごとにキャッシュ ---
+const digitSpriteCache = new Map();
+function digitSprite(digit){
+  let c = digitSpriteCache.get(digit); if(c) return c;
+  const size=16;
+  c=document.createElement("canvas"); c.width=size; c.height=size;
+  const g=c.getContext("2d");
+  g.font="bold 11px monospace"; g.textAlign="center"; g.textBaseline="middle";
+  g.lineWidth=2.5; g.strokeStyle="rgba(255,255,255,0.65)";
+  g.strokeText(digit, size/2, size/2+0.5);
+  g.fillStyle="#1a0f2a";
+  g.fillText(digit, size/2, size/2+0.5);
+  digitSpriteCache.set(digit,c); return c;
+}
+//--- 敵弾レイヤー用オフスクリーンキャンバス ---
+// blur(0.7px)フィルタはCanvas2Dでは描画呼び出しごとに再計算されるため、
+// 弾を1つずつフィルタ付きで描くと弾数に比例して重くなる。
+// 一旦フィルタ無しでこのレイヤーに描いてから、まとめて1回だけフィルタ付きで
+// メインキャンバスへ転送することでフィルタ適用コストをO(1)にする
+const bulletLayer = document.createElement("canvas");
+bulletLayer.width = W; bulletLayer.height = H;
+const bulletLayerCtx = bulletLayer.getContext("2d");
+
+
 //----------------------------------------------------------------------
 // SE(Web Audio APIによる8bit風プロシージャル合成。音源ファイル不要)
 //----------------------------------------------------------------------
@@ -1208,46 +1251,49 @@ function drawPlayerBullets(){
 }
 
 function drawEnemyBullets(){
-  // 敵弾: 単語弾 / 三日月(ボス) / 縁取り丸(+数字)。アイテムと見分けやすいよう薄くブラーをかける
-  // (弾数が多い時はブラーが重くなるので無効化する: シンギュラリティ弾幕等の対策)
-  ctx.filter = eBullets.length>500 ? "none" : "blur(0.7px)";
+  // 敵弾: 単語弾 / 三日月(ボス) / 縁取り丸(+数字)。アイテムと見分けやすいよう薄くブラーをかける。
+  // blur()フィルタは描画呼び出し1回ごとに再計算されるため、弾を1つずつフィルタ付きで
+  // 描画すると弾数に比例して重くなる。そこでフィルタなしのオフスクリーンレイヤーに
+  // まとめて描いてから、レイヤー全体に対して1回だけフィルタ付きで転送する(O(1)化)。
+  // 単語弾/数字弾もテキストを毎フレーム生描画せず、事前ラスタライズ済みスプライトを使う。
+  // (弾数が非常に多い時はブラー自体を無効化: シンギュラリティ弾幕等の対策)
+  const useBlur = eBullets.length<=500;
+  const dctx = useBlur ? bulletLayerCtx : ctx;
+  if(useBlur) dctx.clearRect(0,0,W,H);
   for(const b of eBullets){
     if(b.sprite){
       // スプライト弾(コイン・チケット等): spin指定でくるくる回転、0なら進行方向を向く
-      ctx.save(); ctx.translate(b.x,b.y);
-      ctx.rotate(b.spin ? b.t*b.spin : b.angle);
-      ctx.drawImage(b.sprite, -b.sprite.width/2, -b.sprite.height/2);
-      ctx.restore();
+      dctx.save(); dctx.translate(b.x,b.y);
+      dctx.rotate(b.spin ? b.t*b.spin : b.angle);
+      dctx.drawImage(b.sprite, -b.sprite.width/2, -b.sprite.height/2);
+      dctx.restore();
     }else if(b.word){
-      ctx.save(); ctx.translate(b.x,b.y);
-      ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.lineWidth=3; ctx.strokeStyle="rgba(5,3,12,0.9)";
-      ctx.strokeText(b.word,0,0);
-      ctx.fillStyle=b.color; ctx.fillText(b.word,0,0);
-      ctx.restore();
+      const spr = wordSprite(b.word, b.color);
+      dctx.save(); dctx.translate(b.x,b.y);
+      dctx.drawImage(spr, -spr.width/2, -spr.height/2);
+      dctx.restore();
     }else if(b.moon){
       const spr = moonSprite(b.color, b.r+2);
-      ctx.save(); ctx.translate(b.x,b.y);
-      ctx.rotate(b.angle + game.frame*0.06);
-      ctx.drawImage(spr, -spr.width/2, -spr.height/2);
-      ctx.restore();
+      dctx.save(); dctx.translate(b.x,b.y);
+      dctx.rotate(b.angle + game.frame*0.06);
+      dctx.drawImage(spr, -spr.width/2, -spr.height/2);
+      dctx.restore();
     }else{
-      ctx.fillStyle=b.edge;
-      ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,TAU); ctx.fill();
-      ctx.fillStyle=b.color;
-      ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.62,0,TAU); ctx.fill();
+      dctx.fillStyle=b.edge;
+      dctx.beginPath(); dctx.arc(b.x,b.y,b.r,0,TAU); dctx.fill();
+      dctx.fillStyle=b.color;
+      dctx.beginPath(); dctx.arc(b.x,b.y,b.r*0.62,0,TAU); dctx.fill();
       if(b.digit){
-        ctx.font="bold 11px monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
-        ctx.lineWidth=2.5; ctx.strokeStyle="rgba(255,255,255,0.65)";
-        ctx.strokeText(b.digit,b.x,b.y+0.5);
-        ctx.fillStyle="#1a0f2a";
-        ctx.fillText(b.digit,b.x,b.y+0.5);
-        ctx.lineWidth=1;
+        const spr = digitSprite(b.digit);
+        dctx.drawImage(spr, b.x-spr.width/2, b.y-spr.height/2+0.5);
       }
     }
   }
-  ctx.filter="none";
-  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  if(useBlur){
+    ctx.filter="blur(0.7px)";
+    ctx.drawImage(bulletLayer,0,0);
+    ctx.filter="none";
+  }
 }
 
 function drawItems(){
@@ -1328,16 +1374,18 @@ function drawOverlay(){
     ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
     ctx.fillText("シナリオ選択",W/2,listTop-30);
     for(const c of SCENARIO_CHIPS){
-      // 全項目を同じ透過率・色・太さで統一表示する
-      ctx.fillStyle = "rgba(255,255,255,0.14)";
+      // キーボードでカーソルが当たっている項目は金色で強調表示する
+      const active = c.i===game.scenario;
+      ctx.fillStyle = active ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.14)";
       ctx.fillRect(c.x,c.y,c.w,c.h);
-      ctx.strokeStyle = "#8b7fb5"; ctx.lineWidth = 1;
+      ctx.strokeStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.lineWidth = active?2:1;
       ctx.strokeRect(c.x,c.y,c.w,c.h);
-      ctx.fillStyle = "#e8e2f5"; ctx.font = "bold 17px serif";
+      ctx.lineWidth = 1;
+      ctx.fillStyle = active ? "#ffd76e" : "#e8e2f5"; ctx.font = "bold 17px serif";
       // サブタイトルなしのシナリオはタイトルをカード中央(縦)に1行だけ表示
       ctx.fillText(c.sc.name, c.x+c.w/2, c.sc.sub ? c.y+28 : c.y+38);
       if(c.sc.sub){
-        ctx.fillStyle = "#8b7fb5"; ctx.font = "11px monospace";
+        ctx.fillStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.font = "11px monospace";
         ctx.fillText("- "+c.sc.sub+" -", c.x+c.w/2, c.y+48);
       }
     }
@@ -1353,14 +1401,16 @@ function drawOverlay(){
     ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
     ctx.fillText("難易度選択",W/2,listTop-30);
     for(const c of chips){
-      // 全項目を同じ透過率・色・太さで統一表示する
-      ctx.fillStyle = "rgba(255,255,255,0.14)";
+      // キーボードでカーソルが当たっている項目は金色で強調表示する(デモボタンにフォーカス中は強調しない)
+      const active = c.i===game.diff && !game.demoFocus;
+      ctx.fillStyle = active ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.14)";
       ctx.fillRect(c.x,c.y,c.w,c.h);
-      ctx.strokeStyle = "#8b7fb5"; ctx.lineWidth = 1;
+      ctx.strokeStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.lineWidth = active?2:1;
       ctx.strokeRect(c.x,c.y,c.w,c.h);
-      ctx.fillStyle = "#e8e2f5"; ctx.font = "bold 15px monospace";
+      ctx.lineWidth = 1;
+      ctx.fillStyle = active ? "#ffd76e" : "#e8e2f5"; ctx.font = "bold 15px monospace";
       ctx.fillText(c.name, c.x+c.w/2, c.y+24);
-      ctx.fillStyle = "#8b7fb5"; ctx.font = "11px sans-serif";
+      ctx.fillStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.font = "11px sans-serif";
       ctx.fillText("「"+(c.sub ?? DIFF_SUBTITLE[c.i])+"」", c.x+c.w/2, c.y+42);
     }
     // デモプレイボタン(難易度カードとは別デザイン: 黒地+金の二重枠。↓でフォーカス/タップで即開始)
