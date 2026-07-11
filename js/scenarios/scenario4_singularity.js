@@ -50,20 +50,28 @@ const WASH_P = {
   ACCENT_INTERVAL: 45,
   ACCENT_SPEED: 6.0,
   ACCENT_SPREAD: 10,
+  // AI用の敵機移動(move:true時): この間隔で近距離の移動目標を選び直す。
+  // ボスは目標へ毎フレーム5%の補間で寄るため、狭い目標距離なら「少しずつ漂う」動きになる。
+  // 回転弾幕の中心=ボス位置なので、渦全体がゆっくり流れて安地の暗記が効かなくなる
+  MOVE_INTERVAL: 100,
+  MOVE_RANGE: 80,
 };
-// 人間用=基準弾速そのまま(弾サイズ・密度は同じ) / AI用=弾速アップ+アーム数2倍(密度倍)
-const WASH_MODE_HUMAN = { speed:1.3, armMul:1, rBig:12, rSmall:6, rAcc:7 };
-const WASH_MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6, rAcc:7 };
+// 人間用=基準弾速そのまま(弾サイズ・密度は同じ、発射源は固定) /
+// AI用=弾速アップ+アーム数2倍(密度倍)+発射源が少しずつ移動
+const WASH_MODE_HUMAN = { speed:1.3, armMul:1, rBig:12, rSmall:6, rAcc:7, move:false };
+const WASH_MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6, rAcc:7, move:true };
 const washMode = ()=> game.diff===0 ? WASH_MODE_HUMAN : WASH_MODE_AI;
 
 const twinSpiralSpell = {
   name:"", hp:880, time:3600, spell:false,
-  onStart(b){ b.thetaA=0; b.thetaB=0; b.tx=W/2; b.ty=120; }, // 発射源は画面上部中央に固定
+  onStart(b){ b.thetaA=0; b.thetaB=0; b.tx=W/2; b.ty=120; }, // 開始位置は画面上部中央
   fire(b){
     // 角速度にsin変調をかけて基準角を積分(レイヤーごとに周期が違うので密度ムラが非同期にうねる)
     b.thetaA += WASH_P.OMEGA_A * (1 + WASH_P.MOD_AMP*Math.sin(TAU*b.t/WASH_P.PERIOD_A)) * DEG;
     b.thetaB -= WASH_P.OMEGA_B * (1 + WASH_P.MOD_AMP*Math.sin(TAU*b.t/WASH_P.PERIOD_B)) * DEG;
     const m = washMode();
+    // AI用(ASIデモも同モード)は発射源=渦の中心が少しずつ漂う。人間用は固定のまま
+    if(m.move && b.t>0 && b.t%WASH_P.MOVE_INTERVAL===0) bossMove(b, WASH_P.MOVE_RANGE);
     // レイヤーA: 外層・大玉(時計回り、AI用はアーム数2倍)
     if(b.t%WASH_P.INTERVAL_A===0){
       const arms = WASH_P.ARMS_A*m.armMul;
