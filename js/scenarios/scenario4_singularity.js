@@ -164,15 +164,22 @@ function grapeShot(x, y, angDeg, speedMul){
   // 大玉本体は発射後直進のみ(誘導・加速なし)。描画順=発射順は配列末尾追加で自動的に保たれる
   shot(x, y, angDeg*DEG, spd, {color:"#5a1a8a", edge:"#c96bff", r:GRAPE.R});
 }
-// omni:true にすると扇の旋回をやめ、毎フレーム全方位(0-360度)に均等散布する。
-// 人間用の狭い扇(旋回で数秒かけて全方位を薙ぎ払う)だと、ボスに密着して旋回と逆側に
-// 張り付き続ければ弾が一切来ない区間ができてしまう(いわゆる「安置ハメ」)。
-// AI用はそれを塞ぐため、旋回を待たず常時全方位へ高密度発射に切り替える
-const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.75, omni:false };
-// omniは全方位に同時発射するため、旋回する扇と同じPRESSURE_TARGETでも体感密度は大幅に上がる。
-// pressureMulを上げすぎると全画面が隙間なく埋まって回避不能になるため、非omni時のAI用より
-// 低めに抑える(全方位化そのものが密度感の底上げになっている)
-const GRAPE_MODE_AI    = { speedMul:1.35, pressureMul:0.55, omni:true };
+// モード別パラメータ:
+//   speedMul    弾速倍率
+//   pressureMul PRESSURE_TARGETの倍率(画面内維持数。1.25倍を超えると発射停止する上限も連動)
+//   omni        true=扇の旋回を待たず毎フレーム全方位(0-360度)へ散布。
+//               人間用の狭い扇(旋回で数秒かけて全方位を薙ぎ払う)だと、ボスに密着して旋回と
+//               逆側に張り付き続ければ弾が来ない区間ができるため、AI用はこれで安置ハメを塞ぐ
+//   aimedBurst  バースト(房のまとめ撃ち)を自機狙いにする確率。房の壁が自機に向かって飛んで
+//               くるため、隙間で静止し続ける戦法が効かなくなる
+//   burstIvMul  バースト間隔の倍率(小さいほど房が頻発する)
+//   burstNMul   バースト1回あたりの弾数倍率
+//   moveIvMul   ボス(発射源)の移動間隔倍率(小さいほど頻繁に動き回る)
+const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.8,  omni:false, aimedBurst:0.3, burstIvMul:1.0,  burstNMul:1.0, moveIvMul:1.0 };
+// AI用=フルスロットル: 全方位+人間用より高い維持数+弾速1.5倍+自機狙い房が高頻度。
+// pressureMul 1.0(維持400/上限500)が回避可能な上限付近。1.7(維持680)は画面が隙間なく
+// 埋まり切って回避不能になることを確認済みなので、それ以上は上げないこと
+const GRAPE_MODE_AI    = { speedMul:1.5, pressureMul:1.0, omni:true,  aimedBurst:0.6, burstIvMul:0.55, burstNMul:1.5, moveIvMul:0.65 };
 const grapeMode = ()=> game.diff===0 ? GRAPE_MODE_HUMAN : GRAPE_MODE_AI;
 
 const grapeSpell = {
@@ -185,7 +192,7 @@ const grapeSpell = {
   fire(b){
     const m = grapeMode();
     // 敵機(発射源)が画面上を動き回りながら散布する。安置の固定を防ぐ
-    if(b.t>0 && b.t%GRAPE.MOVE_INTERVAL===0) bossMove(b, GRAPE.MOVE_RANGE);
+    if(b.t>0 && b.t%Math.round(GRAPE.MOVE_INTERVAL*m.moveIvMul)===0) bossMove(b, GRAPE.MOVE_RANGE);
     // 扇の中心角をゆっくり一定回転させる(人間用の狭い扇の旋回に使う。AI用はomni:trueで
     // 旋回を待たず常に全方位へ撃つため無関係)
     b.aimCenter = (b.aimCenter + 360/GRAPE.AIM_PERIOD) % 360;
@@ -202,11 +209,14 @@ const grapeSpell = {
       const ang = m.omni ? grng(0,360) : grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter;
       grapeShot(b.x, b.y, ang, m.speedMul);
     }
-    // 房の強調: 乱数タイミングで同一角度付近へまとめ撃ち(速度はバラバラ→房状に自然分離)
+    // 房の強調: 乱数タイミングで同一角度付近へまとめ撃ち(速度はバラバラ→房状に自然分離)。
+    // aimedBurstの確率で房を自機狙いにする(隙間で待機し続ける戦法への回答)
     if(--b.burstT<=0){
-      b.burstT = grng(GRAPE.BURST_INTERVAL_MIN, GRAPE.BURST_INTERVAL_MAX);
-      const baseAng = m.omni ? grng(0,360) : grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter;
-      const bn = Math.round(grng(GRAPE.BURST_N_MIN, GRAPE.BURST_N_MAX));
+      b.burstT = grng(GRAPE.BURST_INTERVAL_MIN, GRAPE.BURST_INTERVAL_MAX)*m.burstIvMul;
+      const baseAng = grapeRng() < m.aimedBurst ? aimAt(b.x,b.y)/DEG + grng(-6,6)
+                    : m.omni ? grng(0,360)
+                    : grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter;
+      const bn = Math.round(grng(GRAPE.BURST_N_MIN, GRAPE.BURST_N_MAX)*m.burstNMul);
       for(let i=0;i<bn;i++){
         grapeShot(b.x, b.y, baseAng+grng(-GRAPE.BURST_SPREAD_DEG, GRAPE.BURST_SPREAD_DEG), m.speedMul);
       }
