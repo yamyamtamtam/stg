@@ -164,8 +164,15 @@ function grapeShot(x, y, angDeg, speedMul){
   // 大玉本体は発射後直進のみ(誘導・加速なし)。描画順=発射順は配列末尾追加で自動的に保たれる
   shot(x, y, angDeg*DEG, spd, {color:"#5a1a8a", edge:"#c96bff", r:GRAPE.R});
 }
-const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.75 };
-const GRAPE_MODE_AI    = { speedMul:1.35, pressureMul:1.0 };
+// omni:true にすると扇の旋回をやめ、毎フレーム全方位(0-360度)に均等散布する。
+// 人間用の狭い扇(旋回で数秒かけて全方位を薙ぎ払う)だと、ボスに密着して旋回と逆側に
+// 張り付き続ければ弾が一切来ない区間ができてしまう(いわゆる「安置ハメ」)。
+// AI用はそれを塞ぐため、旋回を待たず常時全方位へ高密度発射に切り替える
+const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.75, omni:false };
+// omniは全方位に同時発射するため、旋回する扇と同じPRESSURE_TARGETでも体感密度は大幅に上がる。
+// pressureMulを上げすぎると全画面が隙間なく埋まって回避不能になるため、非omni時のAI用より
+// 低めに抑える(全方位化そのものが密度感の底上げになっている)
+const GRAPE_MODE_AI    = { speedMul:1.35, pressureMul:0.55, omni:true };
 const grapeMode = ()=> game.diff===0 ? GRAPE_MODE_HUMAN : GRAPE_MODE_AI;
 
 const grapeSpell = {
@@ -179,9 +186,8 @@ const grapeSpell = {
     const m = grapeMode();
     // 敵機(発射源)が画面上を動き回りながら散布する。安置の固定を防ぐ
     if(b.t>0 && b.t%GRAPE.MOVE_INTERVAL===0) bossMove(b, GRAPE.MOVE_RANGE);
-    // 扇の中心角をゆっくり一定回転させる。狭い扇のまま数秒かけて全方位(真上含む)を
-    // なぞるので、瞬間的な密度・隙間の見た目は元の下向き一方向の頃と変わらず、かつ
-    // どの場所も回転の周期内には必ず弾が来るようになる(逃げ場を固定させない)
+    // 扇の中心角をゆっくり一定回転させる(人間用の狭い扇の旋回に使う。AI用はomni:trueで
+    // 旋回を待たず常に全方位へ撃つため無関係)
     b.aimCenter = (b.aimCenter + 360/GRAPE.AIM_PERIOD) % 360;
     // 圧力維持: 画面内の葡萄弾(半径がGRAPE.Rの弾)が閾値を下回っていたら発射数を底上げする。
     // 隙間はこの補正の結果ではなく、あくまで角度・速度の乱数の偶然によってのみ生まれる。
@@ -193,12 +199,13 @@ const grapeSpell = {
     if(alive < target) n += 3;
     else if(alive > target*1.25) n = 0;
     for(let i=0;i<n;i++){
-      grapeShot(b.x, b.y, grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter, m.speedMul);
+      const ang = m.omni ? grng(0,360) : grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter;
+      grapeShot(b.x, b.y, ang, m.speedMul);
     }
     // 房の強調: 乱数タイミングで同一角度付近へまとめ撃ち(速度はバラバラ→房状に自然分離)
     if(--b.burstT<=0){
       b.burstT = grng(GRAPE.BURST_INTERVAL_MIN, GRAPE.BURST_INTERVAL_MAX);
-      const baseAng = grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter;
+      const baseAng = m.omni ? grng(0,360) : grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter;
       const bn = Math.round(grng(GRAPE.BURST_N_MIN, GRAPE.BURST_N_MAX));
       for(let i=0;i<bn;i++){
         grapeShot(b.x, b.y, baseAng+grng(-GRAPE.BURST_SPREAD_DEG, GRAPE.BURST_SPREAD_DEG), m.speedMul);
