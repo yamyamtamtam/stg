@@ -25,9 +25,13 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
   wannabeM/wannabeF/believer→シナリオ3)
 - ステージ: `at(frame,fn)` でタイムライン構築。2150fで `startDialogue`(会話→ボス)が通例
 - 会話: `game.dialog` が非nullの間ゲーム進行停止。`DIALOG_OVER`(ゲームオーバー)のみエンジン側
-- ボス進行: `nextPhase()` がスペル配列を順に消化。スペル要素のフック:
+- ボス進行: `advancePhase()`(フェーズ終了時の共通入口)→`nextPhase()`がスペル配列を順に消化。
+  スペル要素のフック:
   - `fire(b)` 毎フレーム / `onStart(b)` フェーズ開始時(召喚など) /
-    `checkAdvance(b)` trueを返すとHP残でも次フェーズへ(例: 召喚全滅で発狂)
+    `checkAdvance(b)` trueを返すとHP残でも次フェーズへ(例: 召喚全滅で発狂) /
+    `postDialog`(セリフ配列) 指定するとフェーズ撃破後・次フェーズ開始前にその会話を挟む
+    (デモプレイ中は会話全般をスキップする方針に合わせ自動でスキップされる。シナリオ4の
+    葡萄フェーズ→二層逆回転フェーズ間の会話が実例)
   - `summonTag` 付きの敵が生存中はボスへのダメージが0.12倍(エンジン共通機構)
 - 自機: 扇状ショット(パワー1.0-4.0で1/3/5/7/9本)。スマホオプション2台(slowLerpで横⇔前方)
 - `loop()`: 全ロジックが60fps前提のフレーム単位で書かれているため、`requestAnimationFrame`の
@@ -55,7 +59,7 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
      dialogPre, dialogPost,        // [{who, text}, ...]
      boss: {
        name,
-       spells,                     // [{name, hp, time, spell, fire(b), onStart?, checkAdvance?}]
+       spells,                     // [{name, hp, time, spell, fire(b), onStart?, checkAdvance?, postDialog?}]
        sprite(b),                  // 弾幕中ドット絵(b.dir/b.enragedで差分)
        cutIn,                      // スペカカットイン立ち絵(IMG.XXX)
        dialog(set),                // 会話立ち絵 {img, scale, margin, bottom}("pre"/"post")

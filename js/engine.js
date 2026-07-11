@@ -622,6 +622,7 @@ function startDialogueOver(){
   eBullets.length=0; pBullets.length=0;
 }
 function dialogList(){
+  if(game.dialog.lines) return game.dialog.lines; // フェーズ間の会話(interlude)は固定のセリフ配列を直接持つ
   if(game.dialog.set==="post") return curScenario().dialogPost;
   if(game.dialog.set==="over") return DIALOG_OVER;
   return curScenario().dialogPre;
@@ -635,6 +636,7 @@ function advanceDialog(){
     game.dialog=null;
     if(set==="post"){ if(game.state==="play"){ game.state="clear"; game.endSel=0; } }
     else if(set==="over"){ game.state="over"; game.endSel=0; }
+    else if(set==="interlude"){ nextPhase(); } // 会話が終わったら本来の次フェーズへ進む
     else spawnBoss();
   }
 }
@@ -673,6 +675,18 @@ function nextPhase(){
   if(sp.spell) cutIn = {t:0, dur:150, name:sp.name, img: curScenario().boss.cutIn, side:"right"};
   boss.tx=W/2; boss.ty=120;
   if(sp.onStart) sp.onStart(boss);
+}
+// フェーズ終了時の共通入口。スペル定義に postDialog(セリフ配列) があれば
+// 次フェーズへ進む前にその会話を挟む(デモ中はナレーション全般をスキップする方針と
+// 揃えるため、デモ中は会話を出さずそのまま次フェーズへ進む)
+function advancePhase(){
+  const sp = curSpells()[boss.phase];
+  if(sp.postDialog && !game.demo){
+    game.dialog = {idx:0, set:"interlude", lines:sp.postDialog};
+    eBullets.length=0; pBullets.length=0;
+  }else{
+    nextPhase();
+  }
 }
 
 function bossDefeated(){
@@ -943,13 +957,13 @@ function update(){
       }
       pBullets=pBullets.filter(b=>!b.hit);
       if(sp.checkAdvance && sp.checkAdvance(boss)){
-        nextPhase(); // スペル側の遷移条件(例: 召喚キャラ全滅で発狂)を満たした
+        advancePhase(); // スペル側の遷移条件(例: 召喚キャラ全滅で発狂)を満たした
       } else if(boss.hp<=0){
         addScore(sp.spell?20000:8000);
         if(sp.spell) popText(boss.x,boss.y,"スペルカード撃破!","#ffd76e");
-        nextPhase();
+        advancePhase();
       } else if(boss.spellTime<=0){
-        nextPhase(); // 時間切れ(ボーナスなし)
+        advancePhase(); // 時間切れ(ボーナスなし)
       }
     }
   }
