@@ -147,10 +147,14 @@ const GRAPE = {
   MOVE_INTERVAL: 90,                  // 発射源(敵機)がこの間隔で新しい移動目標を選ぶ(frame)
   MOVE_RANGE: 180,                    // 移動目標のX方向ばらつき(px)
   // 上安置のお仕置き弾: 葡萄は下向き散布のみなのでボスより上は構造的に安置になる。
-  // そこに入った(=自機がボスの高さ+マージンより上にいる)間だけ、超高速の自機狙い弾を
-  // 撃ち込んで滞在を許さない。時間切れ狙いのボス周回対策
+  // そこに入った(=自機がボスの高さ+マージンより上にいる)間、超高速・高密度の自機狙い
+  // 3wayを撃ち込み続ける。「入ったら確実に死ぬ」火力にして上への逃げ・時間切れ狙いの
+  // ボス周回を封殺する(単発の自機狙いだと横タップ避けで凌げてしまうため、3way+角度と
+  // 弾速のジッターで避けの隙間を潰す)
   PUNISH_MARGIN: 40,                  // 「上にいる」判定: player.y < boss.y + この値
-  PUNISH_SPEED: 8,                    // お仕置き弾の基準弾速(px/frame。モードのspeedMulが乗る)
+  PUNISH_SPEED: 14,                   // 基準弾速(px/frame。モードのspeedMulが乗る→人間用14/AI用21)
+  PUNISH_NWAY: 3,                     // 1回の発射数(自機狙い±PUNISH_SPREAD_DEGの扇)
+  PUNISH_SPREAD_DEG: 7,               // 3wayの角度間隔(度)。横に逃げる先を先回りして塞ぐ
   PUNISH_R: 7,                        // お仕置き弾の半径(小さく速い。見た目は赤で警告色)
 };
 const GRAPE_SEED = 20260711;
@@ -170,11 +174,11 @@ function grapeShot(x, y, angDeg, speedMul){
 // モード別パラメータ:
 //   speedMul    弾速倍率(葡萄・お仕置き弾の両方に乗る)
 //   pressureMul PRESSURE_TARGETの倍率(画面内維持数。1.25倍を超えると発射停止する上限も連動)
-//   punishIv    上安置お仕置き弾の発射間隔(frame。小さいほど上への滞在が即死級になる)
+//   punishIv    上安置お仕置き弾の発射間隔(frame。人間用5/AI用3=毎秒36〜60発の弾幕壁)
 // pressureMul 1.0(維持400/上限500)が回避可能な上限付近。1.7(維持680)は画面が隙間なく
 // 埋まり切って回避不能になることを確認済みなので、それ以上は上げないこと
-const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.8, punishIv:20 };
-const GRAPE_MODE_AI    = { speedMul:1.5, pressureMul:1.0, punishIv:10 };
+const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.8, punishIv:5 };
+const GRAPE_MODE_AI    = { speedMul:1.5, pressureMul:1.0, punishIv:3 };
 const grapeMode = ()=> game.diff===0 ? GRAPE_MODE_HUMAN : GRAPE_MODE_AI;
 
 const grapeSpell = {
@@ -208,11 +212,15 @@ const grapeSpell = {
         grapeShot(b.x, b.y, baseAng+grng(-GRAPE.BURST_SPREAD_DEG, GRAPE.BURST_SPREAD_DEG), m.speedMul);
       }
     }
-    // 上安置お仕置き: 自機がボスの高さ付近より上(下向き扇の外)にいる間だけ、超高速の
-    // 自機狙い弾を撃ち続ける。上に逃げてのボス周回・時間切れ狙いへの回答
+    // 上安置お仕置き: 自機がボスの高さ付近より上(下向き扇の外)にいる間、超高速の自機狙い
+    // 3wayを高頻度で撃ち込み続ける(確殺仕様)。角度・弾速の微ジッターで避けの隙間も潰す
     if(b.t>0 && player.y < b.y+GRAPE.PUNISH_MARGIN && b.t%m.punishIv===0){
-      shot(b.x, b.y, aimAt(b.x,b.y), GRAPE.PUNISH_SPEED*m.speedMul,
-           {color:"#ff4a5a", edge:"#ffd0d6", r:GRAPE.PUNISH_R});
+      const base = aimAt(b.x,b.y);
+      for(let k=0;k<GRAPE.PUNISH_NWAY;k++){
+        const off = (k-(GRAPE.PUNISH_NWAY-1)/2)*GRAPE.PUNISH_SPREAD_DEG + grng(-2,2);
+        shot(b.x, b.y, base+off*DEG, GRAPE.PUNISH_SPEED*m.speedMul*grng(0.9,1.1),
+             {color:"#ff4a5a", edge:"#ffd0d6", r:GRAPE.PUNISH_R});
+      }
     }
   },
 };
