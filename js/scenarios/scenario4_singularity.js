@@ -4,7 +4,8 @@
 // 道中なし。「シンギュラリティ」選択後にルート分岐: 「死ぬがよい」/「君ならできるよ（笑）」。
 // 各ルートはそれぞれ人間用/AI用/ASIデモプレイの3択を持つ独立した単発ボス戦(サブタイトルはなし)。
 //   「死ぬがよい」ルート = 二層逆回転型の回転撃ち弾幕(スペカ名なし)
-//   「君ならできるよ（笑）」ルート = 大玉高密度ランダム散布型弾幕。全画面に降り注ぐ(スペカ名なし)
+//   「君ならできるよ（笑）」ルート = 大玉高密度ランダム散布型弾幕(スペカ名なし)。
+//     下向き散布のみだがボスより上の安置に入ると超高速の自機狙い弾で撃ち抜かれる
 //======================================================================
 (function(){
 
@@ -136,11 +137,7 @@ const washingMachineRoute = {
 // 難易度調整パラメータ(先頭にまとめる)
 const GRAPE = {
   RATE_MIN: 3, RATE_MAX: 5,           // 毎frameの発射数(乱数で変動)
-  SPREAD_DEG: 80,                     // 扇の半角(度)。中心角(下記AIM_PERIODで旋回)からの扇
-  AIM_PERIOD: 260,                    // 扇の中心角が一周(360度)する周期(frame)。
-                                      // ゆっくり回転させることで、狭い扇の密度感(=元の「房」の
-                                      // 見た目)を保ったまま数秒単位で全方位(真上含む)を薙ぎ払い、
-                                      // 特定の場所に居座り続ける安置を作らせない
+  SPREAD_DEG: 80,                     // 下向き(90度)を中心とした扇の半角(度)。80=ほぼ真横まで
   SPEED_MIN: 1.2, SPEED_MAX: 2.8,     // 弾速の範囲(px/frame)。速度差で「房」が自然発生する
   BURST_INTERVAL_MIN: 30, BURST_INTERVAL_MAX: 60, // バースト発生間隔(frame、乱数タイミング)
   BURST_N_MIN: 8, BURST_N_MAX: 12,    // バースト1回あたりの発射数
@@ -149,6 +146,12 @@ const GRAPE = {
   R: 26,                              // 弾半径(自機当たり判定 player.r=2.5 の10倍以上)
   MOVE_INTERVAL: 90,                  // 発射源(敵機)がこの間隔で新しい移動目標を選ぶ(frame)
   MOVE_RANGE: 180,                    // 移動目標のX方向ばらつき(px)
+  // 上安置のお仕置き弾: 葡萄は下向き散布のみなのでボスより上は構造的に安置になる。
+  // そこに入った(=自機がボスの高さ+マージンより上にいる)間だけ、超高速の自機狙い弾を
+  // 撃ち込んで滞在を許さない。時間切れ狙いのボス周回対策
+  PUNISH_MARGIN: 40,                  // 「上にいる」判定: player.y < boss.y + この値
+  PUNISH_SPEED: 8,                    // お仕置き弾の基準弾速(px/frame。モードのspeedMulが乗る)
+  PUNISH_R: 7,                        // お仕置き弾の半径(小さく速い。見た目は赤で警告色)
 };
 const GRAPE_SEED = 20260711;
 const grapeRng = makeRng(GRAPE_SEED);
@@ -165,61 +168,51 @@ function grapeShot(x, y, angDeg, speedMul){
   shot(x, y, angDeg*DEG, spd, {color:"#5a1a8a", edge:"#c96bff", r:GRAPE.R});
 }
 // モード別パラメータ:
-//   speedMul    弾速倍率
+//   speedMul    弾速倍率(葡萄・お仕置き弾の両方に乗る)
 //   pressureMul PRESSURE_TARGETの倍率(画面内維持数。1.25倍を超えると発射停止する上限も連動)
-//   omni        true=扇の旋回を待たず毎フレーム全方位(0-360度)へ散布。
-//               人間用の狭い扇(旋回で数秒かけて全方位を薙ぎ払う)だと、ボスに密着して旋回と
-//               逆側に張り付き続ければ弾が来ない区間ができるため、AI用はこれで安置ハメを塞ぐ
-//   aimedBurst  バースト(房のまとめ撃ち)を自機狙いにする確率。房の壁が自機に向かって飛んで
-//               くるため、隙間で静止し続ける戦法が効かなくなる
-//   burstIvMul  バースト間隔の倍率(小さいほど房が頻発する)
-//   burstNMul   バースト1回あたりの弾数倍率
-//   moveIvMul   ボス(発射源)の移動間隔倍率(小さいほど頻繁に動き回る)
-const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.8,  omni:false, aimedBurst:0.3, burstIvMul:1.0,  burstNMul:1.0, moveIvMul:1.0 };
-// AI用=フルスロットル: 全方位+人間用より高い維持数+弾速1.5倍+自機狙い房が高頻度。
+//   punishIv    上安置お仕置き弾の発射間隔(frame。小さいほど上への滞在が即死級になる)
 // pressureMul 1.0(維持400/上限500)が回避可能な上限付近。1.7(維持680)は画面が隙間なく
 // 埋まり切って回避不能になることを確認済みなので、それ以上は上げないこと
-const GRAPE_MODE_AI    = { speedMul:1.5, pressureMul:1.0, omni:true,  aimedBurst:0.6, burstIvMul:0.55, burstNMul:1.5, moveIvMul:0.65 };
+const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.8, punishIv:20 };
+const GRAPE_MODE_AI    = { speedMul:1.5, pressureMul:1.0, punishIv:10 };
 const grapeMode = ()=> game.diff===0 ? GRAPE_MODE_HUMAN : GRAPE_MODE_AI;
 
 const grapeSpell = {
   name:"", hp:900, time:3600, spell:false,
   onStart(b){
     b.x=W/2; b.y=90; b.tx=W/2; b.ty=90;
-    b.aimCenter=90; // 扇の中心角(0=右,90=下,180=左,270=上)。真下から旋回を始める
     b.burstT=grng(GRAPE.BURST_INTERVAL_MIN, GRAPE.BURST_INTERVAL_MAX);
   },
   fire(b){
     const m = grapeMode();
-    // 敵機(発射源)が画面上を動き回りながら散布する。安置の固定を防ぐ
-    if(b.t>0 && b.t%Math.round(GRAPE.MOVE_INTERVAL*m.moveIvMul)===0) bossMove(b, GRAPE.MOVE_RANGE);
-    // 扇の中心角をゆっくり一定回転させる(人間用の狭い扇の旋回に使う。AI用はomni:trueで
-    // 旋回を待たず常に全方位へ撃つため無関係)
-    b.aimCenter = (b.aimCenter + 360/GRAPE.AIM_PERIOD) % 360;
+    // 敵機(発射源)が画面上を動き回りながら散布する。下向き扇の「濃い帯」を横に移動させる
+    if(b.t>0 && b.t%GRAPE.MOVE_INTERVAL===0) bossMove(b, GRAPE.MOVE_RANGE);
     // 圧力維持: 画面内の葡萄弾(半径がGRAPE.Rの弾)が閾値を下回っていたら発射数を底上げする。
     // 隙間はこの補正の結果ではなく、あくまで角度・速度の乱数の偶然によってのみ生まれる。
-    // 扇が横・斜め方向を向いている間は弾が画面内に留まる時間が延びて自然減少が遅れるので、
-    // 逆に閾値を大きく超えた時は新規発射を止めて自然減少を待つ(閾値を上限としても働かせる)
+    // 閾値を大きく超えた時は新規発射を止めて自然減少を待つ(閾値を上限としても働かせる)
     const alive = eBullets.reduce((n,e)=> n + (e.r===GRAPE.R ? 1 : 0), 0);
     const target = GRAPE.PRESSURE_TARGET*m.pressureMul;
     let n = Math.round(grng(GRAPE.RATE_MIN, GRAPE.RATE_MAX));
     if(alive < target) n += 3;
     else if(alive > target*1.25) n = 0;
+    // 葡萄本体: 下向き(90度)中心の広い扇にのみ散布する。ボスより上は撃たない(構造的な安置)
     for(let i=0;i<n;i++){
-      const ang = m.omni ? grng(0,360) : grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter;
-      grapeShot(b.x, b.y, ang, m.speedMul);
+      grapeShot(b.x, b.y, 90+grapeBiasedOffset(GRAPE.SPREAD_DEG), m.speedMul);
     }
-    // 房の強調: 乱数タイミングで同一角度付近へまとめ撃ち(速度はバラバラ→房状に自然分離)。
-    // aimedBurstの確率で房を自機狙いにする(隙間で待機し続ける戦法への回答)
+    // 房の強調: 乱数タイミングで同一角度付近へまとめ撃ち(速度はバラバラ→房状に自然分離)
     if(--b.burstT<=0){
-      b.burstT = grng(GRAPE.BURST_INTERVAL_MIN, GRAPE.BURST_INTERVAL_MAX)*m.burstIvMul;
-      const baseAng = grapeRng() < m.aimedBurst ? aimAt(b.x,b.y)/DEG + grng(-6,6)
-                    : m.omni ? grng(0,360)
-                    : grapeBiasedOffset(GRAPE.SPREAD_DEG)+b.aimCenter;
-      const bn = Math.round(grng(GRAPE.BURST_N_MIN, GRAPE.BURST_N_MAX)*m.burstNMul);
+      b.burstT = grng(GRAPE.BURST_INTERVAL_MIN, GRAPE.BURST_INTERVAL_MAX);
+      const baseAng = 90+grapeBiasedOffset(GRAPE.SPREAD_DEG);
+      const bn = Math.round(grng(GRAPE.BURST_N_MIN, GRAPE.BURST_N_MAX));
       for(let i=0;i<bn;i++){
         grapeShot(b.x, b.y, baseAng+grng(-GRAPE.BURST_SPREAD_DEG, GRAPE.BURST_SPREAD_DEG), m.speedMul);
       }
+    }
+    // 上安置お仕置き: 自機がボスの高さ付近より上(下向き扇の外)にいる間だけ、超高速の
+    // 自機狙い弾を撃ち続ける。上に逃げてのボス周回・時間切れ狙いへの回答
+    if(b.t>0 && player.y < b.y+GRAPE.PUNISH_MARGIN && b.t%m.punishIv===0){
+      shot(b.x, b.y, aimAt(b.x,b.y), GRAPE.PUNISH_SPEED*m.speedMul,
+           {color:"#ff4a5a", edge:"#ffd0d6", r:GRAPE.PUNISH_R});
     }
   },
 };
