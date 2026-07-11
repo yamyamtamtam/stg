@@ -25,13 +25,9 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
   wannabeM/wannabeF/believer→シナリオ3)
 - ステージ: `at(frame,fn)` でタイムライン構築。2150fで `startDialogue`(会話→ボス)が通例
 - 会話: `game.dialog` が非nullの間ゲーム進行停止。`DIALOG_OVER`(ゲームオーバー)のみエンジン側
-- ボス進行: `advancePhase()`(フェーズ終了時の共通入口)→`nextPhase()`がスペル配列を順に消化。
-  スペル要素のフック:
+- ボス進行: `nextPhase()`がスペル配列を順に消化。スペル要素のフック:
   - `fire(b)` 毎フレーム / `onStart(b)` フェーズ開始時(召喚など) /
-    `checkAdvance(b)` trueを返すとHP残でも次フェーズへ(例: 召喚全滅で発狂) /
-    `postDialog`(セリフ配列) 指定するとフェーズ撃破後・次フェーズ開始前にその会話を挟む
-    (デモプレイ中は会話全般をスキップする方針に合わせ自動でスキップされる。シナリオ4の
-    葡萄フェーズ→二層逆回転フェーズ間の会話が実例)
+    `checkAdvance(b)` trueを返すとHP残でも次フェーズへ(例: 召喚全滅で発狂)
   - `summonTag` 付きの敵が生存中はボスへのダメージが0.12倍(エンジン共通機構)
 - 自機: 扇状ショット(パワー1.0-4.0で1/3/5/7/9本)。スマホオプション2台(slowLerpで横⇔前方)
 - `loop()`: 全ロジックが60fps前提のフレーム単位で書かれているため、`requestAnimationFrame`の
@@ -49,27 +45,32 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
   シナリオ定義に `bgm:"キー名"` があると会話〜ボス撃破はその曲(BGM追加は build_audio.py の FILES に1行)
 
 ## シナリオの追加手順(1日1シナリオ運用)
-1. `js/scenarios/scenarioN_xxx.js` を新規作成。既存2ファイルが実例で、契約は:
+1. `js/scenarios/scenarioN_xxx.js` を新規作成。既存3ファイル(シナリオ1〜3)が実例で、契約は:
    ```js
    registerScenario({
      name, sub,                    // 選択画面・道中バナー表示
      diffOptions,                  // 任意: [{name,sub},...] で難易度選択をシナリオ専用の選択肢に差し替え
-                                   // (game.diffがそのindexになる。シナリオ4の人間用/AI用二択が実例)
+                                   // (game.diffがそのindexになる)
      buildStage(),                 // at()でタイムライン構築。最後に at(2150, startDialogue)
      dialogPre, dialogPost,        // [{who, text}, ...]
      boss: {
        name,
-       spells,                     // [{name, hp, time, spell, fire(b), onStart?, checkAdvance?, postDialog?}]
+       spells,                     // [{name, hp, time, spell, fire(b), onStart?, checkAdvance?}]
        sprite(b),                  // 弾幕中ドット絵(b.dir/b.enragedで差分)
        cutIn,                      // スペカカットイン立ち絵(IMG.XXX)
        dialog(set),                // 会話立ち絵 {img, scale, margin, bottom}("pre"/"post")
      },
    });
    ```
+   分岐のあるシナリオ(シナリオ4が実例)は上記の代わりに `routes:[{name, sub, ...上記と同じ契約}, ...]` を
+   定義できる。`name/sub` はルート選択カードの表示に使われ、選択後は `curRoute()` がそのルートの
+   設定を返す(`curScenario()` はシナリオ全体=ルート選択前の情報のみ。道中バナーの名前表示に使う)。
+   ルート選択画面はシナリオ選択→難易度選択の間に挟まり、`routes` を定義しないシナリオでは自動的に
+   スキップされる
 2. `index.html` の `js/main.js` より前に `<script>` タグを1行追加
 3. 新スプライトが要る場合は `tools/build_sprites.py` にピクセルマップ/立ち絵を追加して
    `--inject` → `IMG.<定数名>` で参照。敵定義に `sprite: IMG.XXX` を渡すと雑魚の絵になる
-4. ASIデモプレイ(難易度選択画面下の自動デモボタン)が要る場合はシナリオに
+4. ASIデモプレイ(難易度選択画面下の自動デモボタン)が要る場合はシナリオ(または各ルート)に
    `demoLabel/demoDiff/demoEndWho/demoEndText/demoReplayText` を定義。自機の見た目を
    差し替えたい場合は `demoPlayerSprite(dir)` も追加(シナリオ4は棗みその後ろ姿)
 

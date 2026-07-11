@@ -27,7 +27,7 @@ function playBgm(track){
 function updateBgm(){
   if(INTRO_ORDER.includes(game.state)){ playBgm(BGM.TITLE); return; }
   if(game.state==="play"){
-    const sb = curScenario() && curScenario().bgm;
+    const sb = curScenario() && curRoute().bgm;
     if(sb && (boss || game.dialog || game.demo)){ playBgm(BGM[sb]); return; }
     playBgm(boss ? BGM.BOSS : BGM.STAGE);
     return;
@@ -206,6 +206,10 @@ addEventListener("keydown", e=>{
     game.scenario = clamp(game.scenario + (e.key==="ArrowDown"?1:-1), 0, SCENARIOS.length-1);
     seMenuMove();
   }
+  if(game.state==="route" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
+    game.route = clamp(game.route + (e.key==="ArrowDown"?1:-1), 0, curScenario().routes.length-1);
+    seMenuMove();
+  }
   if((game.state==="over"||game.state==="clear") && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
     game.endSel = clamp(game.endSel + (e.key==="ArrowDown"?1:-1), 0, END_CHIPS.length-1);
     seMenuMove();
@@ -264,6 +268,11 @@ cv.addEventListener("touchstart", e=>{
       const chip=SCENARIO_CHIPS.find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
       if(chip){ game.scenario=chip.i; introAdvance(); touch.lastTap=0; return; } // シナリオをタップしたら即次の画面へ
     }
+    if(game.state==="route"){
+      const {x:cx,y:cy} = clientToCanvas(t.clientX, t.clientY);
+      const chip=routeChips().find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
+      if(chip){ game.route=chip.i; introAdvance(); touch.lastTap=0; return; } // ルートをタップしたら即次の画面へ
+    }
     if(INTRO_ORDER.includes(game.state)){ introAdvance(); touch.lastTap=0; return; }
     if(game.state==="over"||game.state==="clear"){
       // エンドメニュー(もう一度やる/タイトルに戻る)のボタンタップのみ反応
@@ -314,6 +323,7 @@ const game = {
   shake:0,
   diff:1,               // 難易度: 0=EASY 1=NORMAL 2=HARD 3=LUNATIC
   scenario:0,           // シナリオ: 0=ホモガキミームの海 1=オタサーの森
+  route:0,              // ルート分岐のあるシナリオでの選択(routes配列のインデックス。分岐なしなら未使用)
   tutIdx:0, tutTimer:0,  // 操作チュートリアル(自動再生)の進行
   overPending:false,     // ゲームオーバー会話が進行中/予約済み(ボス撃破会話に上書きされないようにする)
   endSel:0,              // クリア/ゲームオーバー画面のメニュー選択: 0=もう一度やる 1=タイトルに戻る
@@ -341,8 +351,8 @@ const DIFF_CHIPS = DIFF_NAMES.map((name,i)=>({
 // (例: シナリオ4の人間用/AI用二択)。game.diff はその配列のインデックスになり、
 // DIFF_BULLET_SPEED 等の共通テーブルも同じインデックスで引かれる
 function diffOptions(){
-  const sc = SCENARIOS[game.scenario];
-  return (sc && sc.diffOptions) || null;
+  const r = SCENARIOS[game.scenario] && curRoute();
+  return (r && r.diffOptions) || null;
 }
 function diffCount(){ const o = diffOptions(); return o ? o.length : DIFF_NAMES.length; }
 function diffChips(){
@@ -357,13 +367,23 @@ function diffChips(){
 // シナリオが demoLabel を定義していると難易度選択の下にデモプレイボタンが出る(シナリオ4のASIデモ)。
 // ラベルが長い場合は220pxの最小幅からはみ出さないよう文字幅に合わせて広げる
 function demoChip(){
-  const sc = SCENARIOS[game.scenario];
-  if(!sc || !sc.demoLabel) return null;
+  const r = SCENARIOS[game.scenario] && curRoute();
+  if(!r || !r.demoLabel) return null;
   const chips = diffChips();
   const bottom = chips[chips.length-1].y + chips[0].h;
   ctx.font="bold 14px monospace";
-  const w = Math.max(220, ctx.measureText("▶ "+sc.demoLabel).width + 40);
+  const w = Math.max(220, ctx.measureText("▶ "+r.demoLabel).width + 40);
   return {x:(W-w)/2, y:bottom+16, w, h:40};
+}
+// route分岐のあるシナリオ(routes配列)専用の選択カード(縦一列。シナリオ選択画面と同じ構造)
+const ROUTE_ROW_H = 64, ROUTE_ROW_GAP = 12;
+function routeChips(){
+  const routes = (curScenario().routes) || [];
+  return routes.map((r,i)=>({
+    r, i, w:320, h:ROUTE_ROW_H,
+    x: (W-320)/2,
+    y: (H/2 - ((ROUTE_ROW_H+ROUTE_ROW_GAP)*routes.length-ROUTE_ROW_GAP)/2) + i*(ROUTE_ROW_H+ROUTE_ROW_GAP),
+  }));
 }
 
 // クリア/ゲームオーバー画面のメニュー(縦一列。タッチ当たり判定と描画で共有)
@@ -382,15 +402,20 @@ function backToTitle(){
 //----------------------------------------------------------------------
 // 開幕演出: タイトル→シナリオ選択→難易度選択→自機紹介→操作チュートリアル
 //----------------------------------------------------------------------
-const INTRO_ORDER = ["title","scenario","difficulty","playerinfo","tutorial"];
+const INTRO_ORDER = ["title","scenario","route","difficulty","playerinfo","tutorial"];
 // シナリオレジストリ: js/scenarios/*.js が registerScenario() で自分を登録する。
 // 契約: {name, sub, buildStage(), dialogPre, dialogPost,
 //        boss:{name, spells, sprite(b), cutIn, dialog(set)}}
 // spells の各要素: {name, hp, time, spell, fire(b)} + 任意で onStart(b)(フェーズ開始時) /
 // checkAdvance(b)(trueを返すとHP残でもフェーズ遷移。召喚全滅で発狂など)
+// 分岐のあるシナリオ(例: シンギュラリティ)は上記契約の代わりに routes:[{...}, ...] を定義できる。
+// 各要素は上記と同じ契約(+diffOptions/demoLabel等)を持つ独立したルート設定で、
+// name/sub がルート選択画面のカード表示に使われる。game.route がそのインデックス
 const SCENARIOS = [];
 function registerScenario(sc){ SCENARIOS.push(sc); }
 function curScenario(){ return SCENARIOS[game.scenario]; }
+// routesを持つシナリオでは選択中のルート設定を、持たなければシナリオ自身をそのまま返す
+function curRoute(){ const sc = curScenario(); return sc.routes ? sc.routes[game.route] : sc; }
 // demo: チュートリアル中に自機を自動操作して見せる実演の種類
 const TUTORIAL_STEPS_KB = [
   {key:"矢印キー", desc:"移動", demo:"move"},
@@ -409,7 +434,10 @@ function introAdvance(){
   if(idx===-1) return;
   seMenuConfirm();
   if(idx===INTRO_ORDER.length-1){ keys["Shift"]=false; startGame(); return; }
-  game.state = INTRO_ORDER[idx+1];
+  let next = INTRO_ORDER[idx+1];
+  if(next==="route" && !curScenario().routes) next = INTRO_ORDER[idx+2]; // ルート分岐のないシナリオはこの画面を飛ばす
+  game.state = next;
+  if(game.state==="route"){ game.route = clamp(game.route, 0, curScenario().routes.length-1); }
   if(game.state==="difficulty"){ game.diff = clamp(game.diff, 0, diffCount()-1); game.demoFocus=false; } // シナリオ専用難易度は選択肢数が違う
   if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; resetTutorialDemoStep(); }
 }
@@ -600,7 +628,7 @@ function at(f,fn){ timeline.push({f,fn}); }
 
 function buildStage(){
   timeline=[]; tlIndex=0; stageT=0;
-  curScenario().buildStage();
+  curRoute().buildStage();
 }
 
 //======================================================================
@@ -622,10 +650,9 @@ function startDialogueOver(){
   eBullets.length=0; pBullets.length=0;
 }
 function dialogList(){
-  if(game.dialog.lines) return game.dialog.lines; // フェーズ間の会話(interlude)は固定のセリフ配列を直接持つ
-  if(game.dialog.set==="post") return curScenario().dialogPost;
+  if(game.dialog.set==="post") return curRoute().dialogPost;
   if(game.dialog.set==="over") return DIALOG_OVER;
-  return curScenario().dialogPre;
+  return curRoute().dialogPre;
 }
 function advanceDialog(){
   if(!game.dialog) return;
@@ -636,7 +663,6 @@ function advanceDialog(){
     game.dialog=null;
     if(set==="post"){ if(game.state==="play"){ game.state="clear"; game.endSel=0; } }
     else if(set==="over"){ game.state="over"; game.endSel=0; }
-    else if(set==="interlude"){ nextPhase(); } // 会話が終わったら本来の次フェーズへ進む
     else spawnBoss();
   }
 }
@@ -648,12 +674,12 @@ function spawnBoss(){
   boss = {
     x:W/2, y:-60, tx:W/2, ty:120, r:20, t:0,
     phase:-1, hp:0, maxHp:1, spellTime:0, spellMax:0,
-    name: curScenario().boss.name,
+    name: curRoute().boss.name,
     dead:false, moveT:0, dir:0, dmgMult:1, enraged:false,
   };
   nextPhase();
 }
-function curSpells(){ return curScenario().boss.spells; }
+function curSpells(){ return curRoute().boss.spells; }
 function bossMove(b, range=120){
   b.tx = clamp(b.x + rand(-range,range), 60, W-60);
   b.ty = clamp(120 + rand(-40,40), 70, 200);
@@ -672,21 +698,9 @@ function nextPhase(){
   eBullets.length = 0; // 弾消し
   enemies = enemies.filter(e=>!e.zType); // 前フェーズの召喚キャラ(チー牛/豚)を消す
   burst(boss.x,boss.y,"#ffd76e",30,5);
-  if(sp.spell) cutIn = {t:0, dur:150, name:sp.name, img: curScenario().boss.cutIn, side:"right"};
+  if(sp.spell) cutIn = {t:0, dur:150, name:sp.name, img: curRoute().boss.cutIn, side:"right"};
   boss.tx=W/2; boss.ty=120;
   if(sp.onStart) sp.onStart(boss);
-}
-// フェーズ終了時の共通入口。スペル定義に postDialog(セリフ配列) があれば
-// 次フェーズへ進む前にその会話を挟む(デモ中はナレーション全般をスキップする方針と
-// 揃えるため、デモ中は会話を出さずそのまま次フェーズへ進む)
-function advancePhase(){
-  const sp = curSpells()[boss.phase];
-  if(sp.postDialog && !game.demo){
-    game.dialog = {idx:0, set:"interlude", lines:sp.postDialog};
-    eBullets.length=0; pBullets.length=0;
-  }else{
-    nextPhase();
-  }
 }
 
 function bossDefeated(){
@@ -812,7 +826,7 @@ function burstMaybe(b){ if(Math.random()<0.2) burst(b.x,b.y,b.color,3,1.5); }
 // 使用するシナリオ側フィールド: demoLabel / demoDiff / demoEndWho / demoEndText / demoReplayText
 //======================================================================
 function startDemo(){
-  game.diff = curScenario().demoDiff ?? game.diff;
+  game.diff = curRoute().demoDiff ?? game.diff;
   startGame();
   game.demo = true;
   timeline=[]; tlIndex=0;   // 会話・道中なしで即ボス戦
@@ -949,7 +963,7 @@ function update(){
       boss.dmgMult = enemies.some(e=>e.summonTag) ? 0.12 : 1; // 召喚キャラが生きている間はダメージが通りにくい
       // シナリオが bossBarrierOnInvul を立てていると、自機の無敵時間中(ボム含む)は
       // ボスがバリアを貼って自機の攻撃を完全に無効化する(シナリオ4の仕様)
-      boss.barrier = !!(curScenario().bossBarrierOnInvul && (player.invul>0 || player.bombTime>0));
+      boss.barrier = !!(curRoute().bossBarrierOnInvul && (player.invul>0 || player.bombTime>0));
       if(boss.barrier) boss.dmgMult = 0;
       for(const b of pBullets){
         if(b.hit)continue;
@@ -957,13 +971,13 @@ function update(){
       }
       pBullets=pBullets.filter(b=>!b.hit);
       if(sp.checkAdvance && sp.checkAdvance(boss)){
-        advancePhase(); // スペル側の遷移条件(例: 召喚キャラ全滅で発狂)を満たした
+        nextPhase(); // スペル側の遷移条件(例: 召喚キャラ全滅で発狂)を満たした
       } else if(boss.hp<=0){
         addScore(sp.spell?20000:8000);
         if(sp.spell) popText(boss.x,boss.y,"スペルカード撃破!","#ffd76e");
-        advancePhase();
+        nextPhase();
       } else if(boss.spellTime<=0){
-        advancePhase(); // 時間切れ(ボーナスなし)
+        nextPhase(); // 時間切れ(ボーナスなし)
       }
     }
   }
@@ -1098,7 +1112,7 @@ function drawPlayer(){
   const x=player.x,y=player.y;
   // 神北うらら(後ろ姿ドット): 移動方向で少し傾いた差分スプライットに切替。
   // ASIデモプレイ中はシナリオが demoPlayerSprite を定義していればそちらを使う(例: シナリオ4は棗みその後ろ姿)
-  const demoSpr = game.demo && curScenario().demoPlayerSprite;
+  const demoSpr = game.demo && curRoute().demoPlayerSprite;
   const spr = demoSpr ? demoSpr(player.dir)
     : player.dir<0 ? IMG.URARA_SPRITE_LEFT : player.dir>0 ? IMG.URARA_SPRITE_RIGHT : IMG.URARA_SPRITE;
   if(spr.complete && spr.naturalWidth){
@@ -1204,7 +1218,7 @@ function drawBoss(){
     ctx.restore(); ctx.globalAlpha=1;
   }
   // 体(ドット絵スプライト: ふわふわ上下、移動方向で傾き差分に切替)
-  const bSpr = curScenario().boss.sprite(b);
+  const bSpr = curRoute().boss.sprite(b);
   if(bSpr.complete && bSpr.naturalWidth){
     const scale=1, sw=bSpr.naturalWidth*scale, sh=bSpr.naturalHeight*scale;
     const bob=Math.sin(game.frame*0.07)*4;
@@ -1409,6 +1423,32 @@ function drawOverlay(){
     ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
     if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで決定":"Z キーで決定",W/2,listBottom+(IS_TOUCH?26:46));
   }
+  else if(game.state==="route"){
+    const chips = routeChips();
+    const listTop = chips[0].y, listBottom = chips[chips.length-1].y+chips[0].h;
+    ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
+    ctx.fillText(curScenario().name+" - ルート選択",W/2,listTop-30);
+    for(const c of chips){
+      // キーボードでカーソルが当たっている項目は金色で強調表示する
+      const active = c.i===game.route;
+      ctx.fillStyle = active ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.14)";
+      ctx.fillRect(c.x,c.y,c.w,c.h);
+      ctx.strokeStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.lineWidth = active?2:1;
+      ctx.strokeRect(c.x,c.y,c.w,c.h);
+      ctx.lineWidth = 1;
+      ctx.fillStyle = active ? "#ffd76e" : "#e8e2f5"; ctx.font = "bold 17px serif";
+      ctx.fillText(c.r.name, c.x+c.w/2, c.r.sub ? c.y+28 : c.y+38);
+      if(c.r.sub){
+        ctx.fillStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.font = "11px monospace";
+        ctx.fillText("- "+c.r.sub+" -", c.x+c.w/2, c.y+48);
+      }
+    }
+    ctx.lineWidth=1;
+    ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
+    if(!IS_TOUCH) ctx.fillText("↑ ↓ で選択",W/2,listBottom+22);
+    ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで決定":"Z キーで決定",W/2,listBottom+(IS_TOUCH?26:46));
+  }
   else if(game.state==="difficulty"){
     const chips = diffChips(); // シナリオ専用の難易度(diffOptions)があればそちらを表示
     const listTop = chips[0].y, listBottom = chips[chips.length-1].y+chips[0].h;
@@ -1437,7 +1477,7 @@ function drawOverlay(){
       ctx.strokeRect(dc.x,dc.y,dc.w,dc.h);
       ctx.strokeRect(dc.x+3,dc.y+3,dc.w-6,dc.h-6);
       ctx.fillStyle="#ffd76e"; ctx.font="bold 14px monospace";
-      ctx.fillText("▶ "+SCENARIOS[game.scenario].demoLabel, dc.x+dc.w/2, dc.y+25);
+      ctx.fillText("▶ "+curRoute().demoLabel, dc.x+dc.w/2, dc.y+25);
       ctx.lineWidth=1;
     }
     const hintBase = dc ? dc.y+dc.h : listBottom;
@@ -1598,7 +1638,7 @@ function drawDialog(){
   }else{
     // 話者を後に描いて手前に出す。ボス立ち絵の画像/配置はシナリオ定義から取得
     // (bd.solo=ボス単独でうららを出さない / bd.center=ボス立ち絵を画面中央に配置)
-    const bd = curScenario().boss.dialog(game.dialog.set);
+    const bd = curRoute().boss.dialog(game.dialog.set);
     const ports = [
       [bd.img, bd.center?"center":false, !uraraTurn, bd.scale, bd.margin, bd.bottom],
     ];
@@ -1685,7 +1725,7 @@ function drawDemoHud(){
 // デモ撃破後の画面: みそのの立ち絵+セリフ(入力待ちなし)→10秒後にリプレイ告知
 function drawDemoEnd(){
   const de = game.demoEnd; if(!de) return;
-  const sc = curScenario();
+  const sc = curRoute();
   const bd = sc.boss.dialog("pre");
   const img = bd.img;
   if(img.complete && img.naturalWidth){
