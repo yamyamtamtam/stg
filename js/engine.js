@@ -1135,22 +1135,6 @@ function drawPlayer(){
       drawPhone(x+ox, y+oy, s);
     }
   }
-  // 低速時: 当たり判定ドット(白フチ+赤コア、点滅)。デモ中は常時低速なので常に表示
-  if(keys["Shift"] || game.demo){
-    ctx.save();
-    ctx.translate(Math.round(x),Math.round(y)); ctx.rotate(game.frame*0.04);
-    ctx.strokeStyle="rgba(200,180,255,0.7)";
-    ctx.strokeRect(-9,-9,18,18);
-    ctx.restore();
-    const px=Math.round(x)-3, py=Math.round(y)-3;
-    ctx.imageSmoothingEnabled=false;
-    ctx.fillStyle="#ffffff";                       // 白の菱形フチ
-    ctx.fillRect(px+2,py,2,2);   ctx.fillRect(px+2,py+4,2,2);
-    ctx.fillRect(px,py+2,2,2);   ctx.fillRect(px+4,py+2,2,2);
-    ctx.fillStyle=Math.floor(game.frame/8)%2===0?"#ff2a4a":"#ff8aa0"; // 赤コア点滅
-    ctx.fillRect(px+2,py+2,2,2);
-    ctx.imageSmoothingEnabled=true;
-  }
   // ボムエフェクト
   if(player.bombTime>0){
     const pr=(120-player.bombTime)/120*520;
@@ -1159,6 +1143,29 @@ function drawPlayer(){
     ctx.beginPath(); ctx.arc(x,y,pr,0,TAU); ctx.stroke();
     ctx.lineWidth=1;
   }
+}
+
+// 自機の当たり判定マーカー(白菱形フチ+赤コア点滅)。大玉弾幕で自機が敵弾に埋もれても
+// 位置と判定を見失わないよう、render()で敵弾より後(=上のレイヤー)に常時描画する
+function drawPlayerHitbox(){
+  if(game.state!=="play" || !player.alive) return;
+  const x=player.x, y=player.y;
+  // 低速時(デモ中は常時低速)は回転する枠を追加して低速状態を強調
+  if(keys["Shift"] || game.demo){
+    ctx.save();
+    ctx.translate(Math.round(x),Math.round(y)); ctx.rotate(game.frame*0.04);
+    ctx.strokeStyle="rgba(200,180,255,0.7)";
+    ctx.strokeRect(-9,-9,18,18);
+    ctx.restore();
+  }
+  const px=Math.round(x)-3, py=Math.round(y)-3;
+  ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle="#ffffff";                       // 白の菱形フチ
+  ctx.fillRect(px+2,py,2,2);   ctx.fillRect(px+2,py+4,2,2);
+  ctx.fillRect(px,py+2,2,2);   ctx.fillRect(px+4,py+2,2,2);
+  ctx.fillStyle=Math.floor(game.frame/8)%2===0?"#ff2a4a":"#ff8aa0"; // 赤コア点滅
+  ctx.fillRect(px+2,py+2,2,2);
+  ctx.imageSmoothingEnabled=true;
 }
 
 function drawEnemies(){
@@ -1771,6 +1778,7 @@ function render(){
   drawBoss();
   drawPlayer();
   drawEnemyBullets();
+  drawPlayerHitbox(); // 敵弾より上のレイヤー(大玉弾幕に埋もれても判定位置が見える)
   drawEffects();
   drawBanner();
   drawCutIn();
