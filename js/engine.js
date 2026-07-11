@@ -1462,10 +1462,15 @@ function drawOverlay(){
       ctx.strokeStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.lineWidth = active?2:1;
       ctx.strokeRect(c.x,c.y,c.w,c.h);
       ctx.lineWidth = 1;
+      // シナリオ専用diffOptionsがsubを省略している場合は、エンジン標準のフレーバーテキストに
+      // フォールバックせずサブタイトルなし(タイトルのみ)として扱う
+      const sub = diffOptions() ? c.sub : (c.sub ?? DIFF_SUBTITLE[c.i]);
       ctx.fillStyle = active ? "#ffd76e" : "#e8e2f5"; ctx.font = "bold 15px monospace";
-      ctx.fillText(c.name, c.x+c.w/2, c.y+24);
-      ctx.fillStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.font = "11px sans-serif";
-      ctx.fillText("「"+(c.sub ?? DIFF_SUBTITLE[c.i])+"」", c.x+c.w/2, c.y+42);
+      ctx.fillText(c.name, c.x+c.w/2, sub ? c.y+24 : c.y+32);
+      if(sub){
+        ctx.fillStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.font = "11px sans-serif";
+        ctx.fillText("「"+sub+"」", c.x+c.w/2, c.y+42);
+      }
     }
     // デモプレイボタン(難易度カードとは別デザイン: 黒地+金の二重枠。↓でフォーカス/タップで即開始)
     const dc = demoChip();
