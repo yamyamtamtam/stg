@@ -518,7 +518,7 @@ function updateTutorialDemo(){
 }
 
 const player = {
-  x:W/2, y:H-80, r:2.5, grazeR:16,
+  x:W/2, y:H-80, r:1.5, grazeR:16, // r=自機の真ん中の小さい玉(直径3px)だけが当たり判定
   speed:4.0, slowSpeed:1.8,
   lives:3, bombs:3, power:1, slowLerp:0,
   invul:0, bombTime:0,
@@ -1145,8 +1145,10 @@ function drawPlayer(){
   }
 }
 
-// 自機の当たり判定マーカー(白菱形フチ+赤コア点滅)。大玉弾幕で自機が敵弾に埋もれても
-// 位置と判定を見失わないよう、render()で敵弾より後(=上のレイヤー)に常時描画する
+// 自機の当たり判定マーカー。実際の判定(player.r=1.5 → 直径3px)と同じ大きさの緑コアを
+// 「小さい玉」として自機の中心に描く。緑は自機(金髪・暖色系)とも敵弾(紫/赤/青/桃)とも
+// 被らない専用色。大玉弾幕で自機が敵弾に埋もれても位置と判定を見失わないよう、
+// render()で敵弾より後(=常に上のレイヤー)に描画する
 function drawPlayerHitbox(){
   if(game.state!=="play" || !player.alive) return;
   const x=player.x, y=player.y;
@@ -1154,17 +1156,20 @@ function drawPlayerHitbox(){
   if(keys["Shift"] || game.demo){
     ctx.save();
     ctx.translate(Math.round(x),Math.round(y)); ctx.rotate(game.frame*0.04);
-    ctx.strokeStyle="rgba(200,180,255,0.7)";
+    ctx.strokeStyle="rgba(120,255,180,0.7)";
     ctx.strokeRect(-9,-9,18,18);
     ctx.restore();
   }
+  // 暗色フチ(7px角丸)→白リング(5px角丸)→緑コア(3px=当たり判定と同径、点滅)の三層。
+  // 暗色フチのおかげで明るい弾・自機スプライトのどちらの上でも輪郭が立つ
   const px=Math.round(x)-3, py=Math.round(y)-3;
   ctx.imageSmoothingEnabled=false;
-  ctx.fillStyle="#ffffff";                       // 白の菱形フチ
-  ctx.fillRect(px+2,py,2,2);   ctx.fillRect(px+2,py+4,2,2);
-  ctx.fillRect(px,py+2,2,2);   ctx.fillRect(px+4,py+2,2,2);
-  ctx.fillStyle=Math.floor(game.frame/8)%2===0?"#ff2a4a":"#ff8aa0"; // 赤コア点滅
-  ctx.fillRect(px+2,py+2,2,2);
+  ctx.fillStyle="#04121e";
+  ctx.fillRect(px+1,py,5,7); ctx.fillRect(px,py+1,7,5);
+  ctx.fillStyle="#ffffff";
+  ctx.fillRect(px+2,py+1,3,5); ctx.fillRect(px+1,py+2,5,3);
+  ctx.fillStyle=Math.floor(game.frame/8)%2===0?"#2aff6e":"#b0ffd0"; // 緑コア点滅
+  ctx.fillRect(px+2,py+2,3,3);
   ctx.imageSmoothingEnabled=true;
 }
 
