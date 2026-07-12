@@ -80,13 +80,19 @@ function wordSprite(word, color){
   const meas=document.createElement("canvas").getContext("2d");
   meas.font="bold 12px sans-serif";
   const tw = Math.ceil(meas.measureText(word).width);
-  const w = tw+16, h = 20;
-  c=document.createElement("canvas"); c.width=w; c.height=h;
+  // 視認性のため文字全体を白い丸で囲む(円の見た目は判定円b.rより大きい=プレイヤー有利のまま)
+  const cr = Math.ceil(Math.hypot(tw/2, 8)) + 3;   // 文字ボックスの外接円半径+余白
+  const size = cr*2+4;
+  c=document.createElement("canvas"); c.width=size; c.height=size;
   const g=c.getContext("2d");
+  g.fillStyle="rgba(5,3,12,0.6)";                  // 背景と分離する暗色の下地
+  g.beginPath(); g.arc(size/2,size/2,cr,0,Math.PI*2); g.fill();
+  g.strokeStyle="#ffffff"; g.lineWidth=1.6;
+  g.beginPath(); g.arc(size/2,size/2,cr-0.8,0,Math.PI*2); g.stroke();
   g.font="bold 12px sans-serif"; g.textAlign="center"; g.textBaseline="middle";
   g.lineWidth=3; g.strokeStyle="rgba(5,3,12,0.9)";
-  g.strokeText(word, w/2, h/2);
-  g.fillStyle=color; g.fillText(word, w/2, h/2);
+  g.strokeText(word, size/2, size/2);
+  g.fillStyle=color; g.fillText(word, size/2, size/2);
   wordSpriteCache.set(key,c); return c;
 }
 //--- 数字弾スプライト: 数字ごとにキャッシュ ---
@@ -490,7 +496,7 @@ function updateTutorialDemo(){
 }
 
 const player = {
-  x:W/2, y:H-80, r:2.5, grazeR:16,
+  x:W/2, y:H-80, r:3, grazeR:16,   // r: 小さい敵弾(r:4)程度の判定。drawHitboxMarker のドットと同サイズ
   speed:4.0, slowSpeed:1.8,
   lives:3, bombs:3, power:1, slowLerp:0,
   invul:0, bombTime:0,
@@ -1107,21 +1113,13 @@ function drawPlayer(){
       drawPhone(x+ox, y+oy, s);
     }
   }
-  // 低速時: 当たり判定ドット(白フチ+赤コア、点滅)。デモ中は常時低速なので常に表示
+  // 低速時: 回転スクエア(当たり判定ドット本体は drawHitboxMarker が敵弾より上に常時描画)
   if(keys["Shift"] || game.demo){
     ctx.save();
     ctx.translate(Math.round(x),Math.round(y)); ctx.rotate(game.frame*0.04);
     ctx.strokeStyle="rgba(200,180,255,0.7)";
     ctx.strokeRect(-9,-9,18,18);
     ctx.restore();
-    const px=Math.round(x)-3, py=Math.round(y)-3;
-    ctx.imageSmoothingEnabled=false;
-    ctx.fillStyle="#ffffff";                       // 白の菱形フチ
-    ctx.fillRect(px+2,py,2,2);   ctx.fillRect(px+2,py+4,2,2);
-    ctx.fillRect(px,py+2,2,2);   ctx.fillRect(px+4,py+2,2,2);
-    ctx.fillStyle=Math.floor(game.frame/8)%2===0?"#ff2a4a":"#ff8aa0"; // 赤コア点滅
-    ctx.fillRect(px+2,py+2,2,2);
-    ctx.imageSmoothingEnabled=true;
   }
   // ボムエフェクト
   if(player.bombTime>0){
@@ -1131,6 +1129,20 @@ function drawPlayer(){
     ctx.beginPath(); ctx.arc(x,y,pr,0,TAU); ctx.stroke();
     ctx.lineWidth=1;
   }
+}
+
+// 当たり判定マーカー(白の菱形フチ+赤コア点滅): 判定円(player.r=3)と同サイズの6pxドット。
+// 弾幕に埋もれても自機の判定位置が見えるよう、敵弾レイヤーより上に常時描画する
+function drawHitboxMarker(){
+  if(!player.alive) return;
+  const px=Math.round(player.x)-3, py=Math.round(player.y)-3;
+  ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle="#ffffff";
+  ctx.fillRect(px+2,py,2,2);   ctx.fillRect(px+2,py+4,2,2);
+  ctx.fillRect(px,py+2,2,2);   ctx.fillRect(px+4,py+2,2,2);
+  ctx.fillStyle=Math.floor(game.frame/8)%2===0?"#ff2a4a":"#ff8aa0";
+  ctx.fillRect(px+2,py+2,2,2);
+  ctx.imageSmoothingEnabled=true;
 }
 
 function drawEnemies(){
@@ -1712,6 +1724,7 @@ function render(){
   drawBoss();
   drawPlayer();
   drawEnemyBullets();
+  drawHitboxMarker(); // 敵弾より上のレイヤーに描く(弾幕の中でも判定位置を見失わないように)
   drawEffects();
   drawBanner();
   drawCutIn();
