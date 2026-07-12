@@ -850,9 +850,10 @@ function demoExit(){
 // 毎フレーム方向転換できる経路をビームサーチでDEMO_Tフレーム先まで探索し、生き残れる
 // ルートが存在する限りそれを見つけて一手目を実行、次フレームで再探索する(receding horizon)。
 // どの経路でも生き残れない場合は最も長く生存できる経路を選ぶ(それでも当たれば普通に被弾する)
-let DEMO_T = 80;                   // ビーム探索の先読みフレーム数(約1.3秒)。伸ばすほど賢いが
-                                   // 1フレームあたりの計算が重くなり実機でカクつく(実測の妥協点)
-let DEMO_BEAM = 48;                // ビーム幅(各フレームで保持する経路候補の上限)
+let DEMO_T = 64;                   // ビーム探索の先読みフレーム数(約1.1秒)。伸ばすほど賢いが
+                                   // 1フレームあたりの計算が重くなり実機でカクつく(実測の妥協点。
+                                   // 探索の穴はデモの緊急ボム/3死以内の妥協ラインが受け止める)
+let DEMO_BEAM = 36;                // ビーム幅(各フレームで保持する経路候補の上限)
 let DEMO_REPLAN = 2;               // 再探索の間隔(frame)。1=毎フレーム。2で計算負荷が半分になり、
                                    // 60fps予算に収まる(間の1フレームは直前の手を継続)
 const DEMO_MARGIN = 1.5;           // 当たり判定に上乗せする安全マージン(px)
@@ -1075,7 +1076,7 @@ function demoDodge(){
   demoDodge.cached={dx:a.x, dy:a.y, fast:a.fast};
   // 余裕がある時だけ再探索を間引く。弾との余裕が小さい(=精密な糸通し中)は毎フレーム
   // 再探索して品質を保つ
-  demoDodge.hold = bClear < 12 ? 0 : DEMO_REPLAN-1;
+  demoDodge.hold = bClear < 8 ? 0 : DEMO_REPLAN-1;
   return demoDodge.cached;
 }
 
@@ -1508,6 +1509,23 @@ function drawPlayerBullets(){
   ctx.globalAlpha=1;
 }
 
+// 縁取り丸弾の事前ラスタライズ(色×縁×半径ごとにオフスクリーンキャッシュ)。
+// 素のarc+fill 2回/弾 を drawImage 1回/弾 にして、大量弾幕(洗濯機AI用は~1000発)の
+// 描画負荷を下げる。組み合わせ数はシナリオごとに数種類なのでキャッシュは小さい
+const ballSpriteCache = new Map();
+function ballSprite(color, edge, r){
+  const key = color+"|"+edge+"|"+r;
+  let c = ballSpriteCache.get(key);
+  if(!c){
+    const s = Math.ceil(r*2+4);
+    c = document.createElement("canvas"); c.width=c.height=s;
+    const g = c.getContext("2d");
+    g.fillStyle=edge;  g.beginPath(); g.arc(s/2,s/2,r,0,TAU); g.fill();
+    g.fillStyle=color; g.beginPath(); g.arc(s/2,s/2,r*0.62,0,TAU); g.fill();
+    ballSpriteCache.set(key,c);
+  }
+  return c;
+}
 function drawEnemyBullets(){
   // 敵弾: 単語弾 / 三日月(ボス) / 縁取り丸(+数字)。アイテムと見分けやすいよう薄くブラーをかける。
   // blur()フィルタは描画呼び出し1回ごとに再計算されるため、弾を1つずつフィルタ付きで
@@ -1537,10 +1555,8 @@ function drawEnemyBullets(){
       dctx.drawImage(spr, -spr.width/2, -spr.height/2);
       dctx.restore();
     }else{
-      dctx.fillStyle=b.edge;
-      dctx.beginPath(); dctx.arc(b.x,b.y,b.r,0,TAU); dctx.fill();
-      dctx.fillStyle=b.color;
-      dctx.beginPath(); dctx.arc(b.x,b.y,b.r*0.62,0,TAU); dctx.fill();
+      const spr = ballSprite(b.color, b.edge, b.r);
+      dctx.drawImage(spr, b.x-spr.width/2, b.y-spr.height/2);
       if(b.digit){
         const spr = digitSprite(b.digit);
         dctx.drawImage(spr, b.x-spr.width/2, b.y-spr.height/2+0.5);

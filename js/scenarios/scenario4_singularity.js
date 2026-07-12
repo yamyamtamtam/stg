@@ -157,15 +157,10 @@ const GRAPE = {
   // 3wayを撃ち込み続ける。「入ったら確実に死ぬ」火力にして上への逃げ・時間切れ狙いの
   // ボス周回を封殺する(単発の自機狙いだと横タップ避けで凌げてしまうため、3way+角度と
   // 弾速のジッターで避けの隙間を潰す)
-  // 生存回廊: 自機の滞空帯(BELT_Y±BELT_HALF)を横切る瞬間に、ゆっくり漂う回廊柱
-  // |x-corridorX| < CORRIDOR_W/2 の内側を通る弾は発射しない(弾道は直線なので発射時に
-  // 厳密判定できる。回廊位置も時刻の決定関数なので未来の横断時刻の位置まで正確に引ける)。
-  // これが無いと大玉の横一列が偶然塞がる「全幅シール」が数百フレームに一度発生し、
-  // その瞬間はどんな操作でも回避不能になる(到達可能領域の全数探索で証明済み)。
-  // 見た目はほぼ全画面弾幕のまま、「必ずどこかに通り道がある」ことだけが保証される
-  BELT_Y: 520,                        // 回廊が保証される高度(自機の滞空帯の中心)
-  BELT_HALF: 45,                      // 帯の半幅(px)
-  CORRIDOR_W: 95,                     // 回廊柱の幅(px)。大玉の直径52pxに対して余裕1.8倍
+  // ※生存回廊(自機の滞空帯に通り道を保証する間引き)は一度導入したが「自機付近に
+  //   見て分かる隙間ができて簡単になる」ためユーザー判断で撤去した。大玉の横一列が偶然
+  //   塞がる「理論上回避不能な瞬間」は数百フレームに一度残る(全数探索で証明済み)が、
+  //   それはボム/被弾で受けるのが仕様(ASIデモも緊急ボム+3死以内クリアの妥協ラインで対応)
   PUNISH_MARGIN: 40,                  // 「上にいる」判定: player.y < boss.y + この値
   PUNISH_SPEED: 14,                   // 基準弾速(px/frame。モードのspeedMulが乗る→人間用14/AI用21)
   PUNISH_NWAY: 3,                     // 1回の発射数(自機狙い±PUNISH_SPREAD_DEGの扇)
@@ -184,24 +179,6 @@ function grapeBiasedOffset(maxDeg){
 function grapeShot(x, y, angDeg, spd){
   // 大玉本体は発射後直進のみ(誘導・加速なし)。描画順=発射順は配列末尾追加で自動的に保たれる
   shot(x, y, angDeg*DEG, spd, {color:"#5a1a8a", edge:"#c96bff", r:GRAPE.R});
-}
-// 回廊柱の中心x(時刻の決定関数。2つの非同期なsinでゆっくり漂う。最大速度~0.83px/fで
-// 低速移動の自機でも追従できる)
-function grapeCorridorX(t){
-  return W/2 + Math.sin(t*0.005)*140 + Math.sin(t*0.0021)*60;
-}
-// この弾道が自機の滞空帯を横切る時に回廊柱へ入り込むか(入るなら発射しない)
-function grapeHitsCorridor(x0, y0, angDeg, spd, t0){
-  const vx=Math.cos(angDeg*DEG)*spd, vy=Math.sin(angDeg*DEG)*spd;
-  if(vy<=0.05) return false;                       // ほぼ真横〜上向き: 帯に降りてこない
-  const t1=(GRAPE.BELT_Y-GRAPE.BELT_HALF-y0)/vy;   // 帯に入る相対時刻
-  const t2=(GRAPE.BELT_Y+GRAPE.BELT_HALF-y0)/vy;   // 帯を出る相対時刻
-  if(t2<=0) return false;                          // 既に帯より下へ向かっている
-  const xa=x0+vx*Math.max(t1,0), xb=x0+vx*t2;
-  const lo=Math.min(xa,xb)-GRAPE.R, hi=Math.max(xa,xb)+GRAPE.R;
-  const cor=grapeCorridorX(t0+Math.max(t1,0)*0.5+t2*0.5); // 横断中間時刻の回廊位置
-  const half=GRAPE.CORRIDOR_W/2 + 0.9*(t2-Math.max(t1,0)); // 横断中の回廊移動ぶんを上乗せ
-  return hi > cor-half && lo < cor+half;
 }
 // モード別パラメータ:
 //   speedMul    弾速倍率(葡萄・お仕置き弾の両方に乗る)
@@ -235,12 +212,10 @@ const grapeSpell = {
     let n = Math.round(grng(GRAPE.RATE_MIN, GRAPE.RATE_MAX)*ramp);
     if(alive < target*ramp) n += Math.round(3*ramp);
     else if(alive > target*1.25) n = 0;
-    // 葡萄本体: 下向き(90度)中心の広い扇にのみ散布する。ボスより上は撃たない(構造的な安置)。
-    // 生存回廊に入り込む弾道はスキップ(見た目の密度は圧力維持の補充でほぼ変わらない)
+    // 葡萄本体: 下向き(90度)中心の広い扇にのみ散布する。ボスより上は撃たない(構造的な安置)
     for(let i=0;i<n;i++){
       const ang = 90+grapeBiasedOffset(GRAPE.SPREAD_DEG);
       const spd = grng(GRAPE.SPEED_MIN, GRAPE.SPEED_MAX)*m.speedMul;
-      if(grapeHitsCorridor(b.x, b.y, ang, spd, b.t)) continue;
       grapeShot(b.x, b.y, ang, spd);
     }
     // 房の強調: 乱数タイミングで同一角度付近へまとめ撃ち(速度はバラバラ→房状に自然分離)
@@ -248,11 +223,9 @@ const grapeSpell = {
       b.burstT = grng(GRAPE.BURST_INTERVAL_MIN, GRAPE.BURST_INTERVAL_MAX);
       const baseAng = 90+grapeBiasedOffset(GRAPE.SPREAD_DEG);
       const bn = Math.round(grng(GRAPE.BURST_N_MIN, GRAPE.BURST_N_MAX));
-      // 房も1発ずつ回廊チェックを通す(房が回廊を塞ぐと保証が崩れる)
       for(let i=0;i<bn;i++){
         const a2 = baseAng+grng(-GRAPE.BURST_SPREAD_DEG, GRAPE.BURST_SPREAD_DEG);
         const spd = grng(GRAPE.SPEED_MIN, GRAPE.SPEED_MAX)*m.speedMul;
-        if(grapeHitsCorridor(b.x, b.y, a2, spd, b.t)) continue;
         grapeShot(b.x, b.y, a2, spd);
       }
     }
