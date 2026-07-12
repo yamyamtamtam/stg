@@ -24,6 +24,20 @@ function makeRng(seed){
   };
 }
 
+// 汎用: 直進弾(速度vx,vy)が高度帯 beltY±half を横切る間に、時刻の決定関数 corFn が示す
+// 回廊柱 |x - corFn(t)| < corW/2 に入り込むか。回廊による生存保証(両ルート共通の仕組み)
+function trajHitsCorridor(x0, y0, vx, vy, t0, beltY, half, corFn, bulletR, corW, corSpd){
+  if(vy<=0.05) return false;                     // ほぼ真横〜上向き: 帯に降りてこない
+  const t1=(beltY-half-y0)/vy, t2=(beltY+half-y0)/vy;
+  if(t2<=0) return false;                        // 既に帯より下へ向かっている
+  const ta=Math.max(t1,0);
+  const xa=x0+vx*ta, xb=x0+vx*t2;
+  const lo=Math.min(xa,xb)-bulletR, hi=Math.max(xa,xb)+bulletR;
+  const cor=corFn(t0+(ta+t2)/2);                 // 横断中間時刻の回廊位置(厳密予測)
+  const hw=corW/2 + corSpd*(t2-ta);              // 横断中の回廊移動ぶんを幅に上乗せ
+  return hi > cor-hw && lo < cor+hw;
+}
+
 // デモ中の自機表示・撃破後のセリフ・BGM等はどちらのルートも同一(棗みそのが相手のため)
 const demoPlayerSprite = dir => dir<0 ? IMG.MISONO_BACK_SPRITE_LEFT : dir>0 ? IMG.MISONO_BACK_SPRITE_RIGHT : IMG.MISONO_BACK_SPRITE;
 const bossSprite = b => b.dir<0 ? IMG.MISONO_SPRITE_LEFT : b.dir>0 ? IMG.MISONO_SPRITE_RIGHT : IMG.MISONO_SPRITE;
@@ -50,25 +64,52 @@ const WASH_P = {
   ACCENT_INTERVAL: 45,
   ACCENT_SPEED: 6.0,
   ACCENT_SPREAD: 10,
+  // 生存回廊(葡萄と同方式): デモの滞空帯(boss.y+BELT_OFF±BELT_HALF)を横切る瞬間に
+  // ゆっくり漂う回廊柱に入り込む弾道は発射しない。発射角ベースのレーンだと「レーンが
+  // 回ってくる前に発射済みの弾」が残って一度もクリーンにならないため、横断時刻の位置で
+  // 判定する(弾は直進なので発射時に厳密に計算できる)。二層逆回転の噛み合わせが偶然
+  // 塞がる「理論上回避不能な瞬間」をこれで排除する
+  BELT_OFF: 140,                     // 回廊を保証する高度: boss.y + この値(demoBeltYと一致)
+  BELT_HALF: 75,                     // 帯の半幅(px)。ボスの上下ドリフト分を含めて広めに取る
+  CORRIDOR_W: 70,                    // 回廊柱の幅(px)。大玉(r12)の直径24pxに対して余裕2.9倍
+  // AI用の敵機移動(move:true時): この間隔で近距離の移動目標を選び直す。
+  // ボスは目標へ毎フレーム5%の補間で寄るため、狭い目標距離なら「少しずつ漂う」動きになる。
+  // 回転弾幕の中心=ボス位置なので、渦全体がゆっくり流れて安地の暗記が効かなくなる
+  MOVE_INTERVAL: 100,
+  MOVE_RANGE: 80,
 };
-// 人間用=基準弾速そのまま(弾サイズ・密度は同じ) / AI用=弾速アップ+アーム数2倍(密度倍)
-const WASH_MODE_HUMAN = { speed:1.3, armMul:1, rBig:12, rSmall:6, rAcc:7 };
-const WASH_MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6, rAcc:7 };
+// 人間用=基準弾速そのまま(弾サイズ・密度は同じ、発射源は固定) /
+// AI用=弾速アップ+アーム数2倍(密度倍)+発射源が少しずつ移動
+const WASH_MODE_HUMAN = { speed:1.3, armMul:1, rBig:12, rSmall:6, rAcc:7, move:false };
+const WASH_MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6, rAcc:7, move:true };
 const washMode = ()=> game.diff===0 ? WASH_MODE_HUMAN : WASH_MODE_AI;
 
+// 洗濯機の回廊柱の中心x(時刻の決定関数。最大速度~0.56px/fでゆっくり漂う)
+function washCorridorX(t){
+  return W/2 + Math.sin(t*0.004)*120 + Math.sin(t*0.0017)*50;
+}
 const twinSpiralSpell = {
   name:"", hp:880, time:3600, spell:false,
-  onStart(b){ b.thetaA=0; b.thetaB=0; b.tx=W/2; b.ty=120; }, // 発射源は画面上部中央に固定
+  onStart(b){ b.thetaA=0; b.thetaB=0; b.tx=W/2; b.ty=120; }, // 開始位置は画面上部中央
   fire(b){
     // 角速度にsin変調をかけて基準角を積分(レイヤーごとに周期が違うので密度ムラが非同期にうねる)
     b.thetaA += WASH_P.OMEGA_A * (1 + WASH_P.MOD_AMP*Math.sin(TAU*b.t/WASH_P.PERIOD_A)) * DEG;
     b.thetaB -= WASH_P.OMEGA_B * (1 + WASH_P.MOD_AMP*Math.sin(TAU*b.t/WASH_P.PERIOD_B)) * DEG;
     const m = washMode();
+    // AI用(ASIデモも同モード)は発射源=渦の中心が少しずつ漂う。人間用は固定のまま
+    if(m.move && b.t>0 && b.t%WASH_P.MOVE_INTERVAL===0) bossMove(b, WASH_P.MOVE_RANGE);
+    // 生存回廊: デモの滞空帯を横切る瞬間に回廊柱へ入り込む弾道は撃たない(アクセント弾は
+    // 自機狙いの点的脅威なので対象外=回廊内でも安穏とはさせない)
+    const beltY = b.y + WASH_P.BELT_OFF;
+    const corHit = (a, spd) => trajHitsCorridor(
+      b.x, b.y, Math.cos(a)*spd, Math.sin(a)*spd, b.t,
+      beltY, WASH_P.BELT_HALF, washCorridorX, m.rBig, WASH_P.CORRIDOR_W, 0.6);
     // レイヤーA: 外層・大玉(時計回り、AI用はアーム数2倍)
     if(b.t%WASH_P.INTERVAL_A===0){
       const arms = WASH_P.ARMS_A*m.armMul;
       for(let k=0;k<arms;k++){
         const a = b.thetaA + k*(360/arms)*DEG;
+        if(corHit(a, WASH_P.SPEED_A*m.speed)) continue;
         shot(b.x,b.y,a,WASH_P.SPEED_A*m.speed,{color:k%2?"#ff8ae0":"#c96bff",edge:"#ffe6ff",r:m.rBig});
       }
     }
@@ -77,6 +118,7 @@ const twinSpiralSpell = {
       const arms = WASH_P.ARMS_B*m.armMul;
       for(let k=0;k<arms;k++){
         const a = b.thetaB + k*(360/arms)*DEG;
+        if(corHit(a, WASH_P.SPEED_B*m.speed)) continue;
         shot(b.x,b.y,a,WASH_P.SPEED_B*m.speed,{color:"#ff4a5a",edge:"#ffb8c0",r:m.rSmall});
       }
     }
@@ -104,6 +146,9 @@ const WASH_DIALOG_POST_AI = [
 
 const washingMachineRoute = {
   name:"死ぬがよい",
+  // ASIデモの推奨滞空高度: 回転弾幕はボスに近い内周ほどアームの横薙ぎが遅く安全。
+  // 外周(床付近)は薙ぎ速度が自機の最高速を超えるため、デモAIをボス寄りに誘導する
+  demoBeltY: b => b.y + 140,
   diffOptions: [
     {name:"人間用"},
     {name:"AI用"},
@@ -143,14 +188,27 @@ const GRAPE = {
   BURST_N_MIN: 8, BURST_N_MAX: 12,    // バースト1回あたりの発射数
   BURST_SPREAD_DEG: 5,                // バースト内の角度ばらつき(±度)
   PRESSURE_TARGET: 400,               // 画面内メイン弾(葡萄)の維持数下限
-  R: 26,                              // 弾半径(自機当たり判定 player.r=2.5 の10倍以上)
+  R: 26,                              // 弾半径(自機当たり判定 player.r=1.5 の17倍以上)
   MOVE_INTERVAL: 90,                  // 発射源(敵機)がこの間隔で新しい移動目標を選ぶ(frame)
   MOVE_RANGE: 180,                    // 移動目標のX方向ばらつき(px)
   // 上安置のお仕置き弾: 葡萄は下向き散布のみなのでボスより上は構造的に安置になる。
-  // そこに入った(=自機がボスの高さ+マージンより上にいる)間だけ、超高速の自機狙い弾を
-  // 撃ち込んで滞在を許さない。時間切れ狙いのボス周回対策
+  // そこに入った(=自機がボスの高さ+マージンより上にいる)間、超高速・高密度の自機狙い
+  // 3wayを撃ち込み続ける。「入ったら確実に死ぬ」火力にして上への逃げ・時間切れ狙いの
+  // ボス周回を封殺する(単発の自機狙いだと横タップ避けで凌げてしまうため、3way+角度と
+  // 弾速のジッターで避けの隙間を潰す)
+  // 生存回廊: 自機の滞空帯(BELT_Y±BELT_HALF)を横切る瞬間に、ゆっくり漂う回廊柱
+  // |x-corridorX| < CORRIDOR_W/2 の内側を通る弾は発射しない(弾道は直線なので発射時に
+  // 厳密判定できる。回廊位置も時刻の決定関数なので未来の横断時刻の位置まで正確に引ける)。
+  // これが無いと大玉の横一列が偶然塞がる「全幅シール」が数百フレームに一度発生し、
+  // その瞬間はどんな操作でも回避不能になる(到達可能領域の全数探索で証明済み)。
+  // 見た目はほぼ全画面弾幕のまま、「必ずどこかに通り道がある」ことだけが保証される
+  BELT_Y: 520,                        // 回廊が保証される高度(自機の滞空帯の中心)
+  BELT_HALF: 45,                      // 帯の半幅(px)
+  CORRIDOR_W: 95,                     // 回廊柱の幅(px)。大玉の直径52pxに対して余裕1.8倍
   PUNISH_MARGIN: 40,                  // 「上にいる」判定: player.y < boss.y + この値
-  PUNISH_SPEED: 8,                    // お仕置き弾の基準弾速(px/frame。モードのspeedMulが乗る)
+  PUNISH_SPEED: 14,                   // 基準弾速(px/frame。モードのspeedMulが乗る→人間用14/AI用21)
+  PUNISH_NWAY: 3,                     // 1回の発射数(自機狙い±PUNISH_SPREAD_DEGの扇)
+  PUNISH_SPREAD_DEG: 7,               // 3wayの角度間隔(度)。横に逃げる先を先回りして塞ぐ
   PUNISH_R: 7,                        // お仕置き弾の半径(小さく速い。見た目は赤で警告色)
 };
 const GRAPE_SEED = 20260711;
@@ -162,19 +220,36 @@ function grapeBiasedOffset(maxDeg){
   const u = (grapeRng()+grapeRng()+grapeRng())/3; // 0..1、中央(0.5)に寄る
   return (u*2-1) * maxDeg;
 }
-function grapeShot(x, y, angDeg, speedMul){
-  const spd = grng(GRAPE.SPEED_MIN, GRAPE.SPEED_MAX) * speedMul;
+function grapeShot(x, y, angDeg, spd){
   // 大玉本体は発射後直進のみ(誘導・加速なし)。描画順=発射順は配列末尾追加で自動的に保たれる
   shot(x, y, angDeg*DEG, spd, {color:"#5a1a8a", edge:"#c96bff", r:GRAPE.R});
+}
+// 回廊柱の中心x(時刻の決定関数。2つの非同期なsinでゆっくり漂う。最大速度~0.83px/fで
+// 低速移動の自機でも追従できる)
+function grapeCorridorX(t){
+  return W/2 + Math.sin(t*0.005)*140 + Math.sin(t*0.0021)*60;
+}
+// この弾道が自機の滞空帯を横切る時に回廊柱へ入り込むか(入るなら発射しない)
+function grapeHitsCorridor(x0, y0, angDeg, spd, t0){
+  const vx=Math.cos(angDeg*DEG)*spd, vy=Math.sin(angDeg*DEG)*spd;
+  if(vy<=0.05) return false;                       // ほぼ真横〜上向き: 帯に降りてこない
+  const t1=(GRAPE.BELT_Y-GRAPE.BELT_HALF-y0)/vy;   // 帯に入る相対時刻
+  const t2=(GRAPE.BELT_Y+GRAPE.BELT_HALF-y0)/vy;   // 帯を出る相対時刻
+  if(t2<=0) return false;                          // 既に帯より下へ向かっている
+  const xa=x0+vx*Math.max(t1,0), xb=x0+vx*t2;
+  const lo=Math.min(xa,xb)-GRAPE.R, hi=Math.max(xa,xb)+GRAPE.R;
+  const cor=grapeCorridorX(t0+Math.max(t1,0)*0.5+t2*0.5); // 横断中間時刻の回廊位置
+  const half=GRAPE.CORRIDOR_W/2 + 0.9*(t2-Math.max(t1,0)); // 横断中の回廊移動ぶんを上乗せ
+  return hi > cor-half && lo < cor+half;
 }
 // モード別パラメータ:
 //   speedMul    弾速倍率(葡萄・お仕置き弾の両方に乗る)
 //   pressureMul PRESSURE_TARGETの倍率(画面内維持数。1.25倍を超えると発射停止する上限も連動)
-//   punishIv    上安置お仕置き弾の発射間隔(frame。小さいほど上への滞在が即死級になる)
+//   punishIv    上安置お仕置き弾の発射間隔(frame。人間用5/AI用3=毎秒36〜60発の弾幕壁)
 // pressureMul 1.0(維持400/上限500)が回避可能な上限付近。1.7(維持680)は画面が隙間なく
 // 埋まり切って回避不能になることを確認済みなので、それ以上は上げないこと
-const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.8, punishIv:20 };
-const GRAPE_MODE_AI    = { speedMul:1.5, pressureMul:1.0, punishIv:10 };
+const GRAPE_MODE_HUMAN = { speedMul:1.0, pressureMul:0.8, punishIv:5 };
+const GRAPE_MODE_AI    = { speedMul:1.5, pressureMul:1.0, punishIv:3 };
 const grapeMode = ()=> game.diff===0 ? GRAPE_MODE_HUMAN : GRAPE_MODE_AI;
 
 const grapeSpell = {
@@ -192,27 +267,43 @@ const grapeSpell = {
     // 閾値を大きく超えた時は新規発射を止めて自然減少を待つ(閾値を上限としても働かせる)
     const alive = eBullets.reduce((n,e)=> n + (e.r===GRAPE.R ? 1 : 0), 0);
     const target = GRAPE.PRESSURE_TARGET*m.pressureMul;
-    let n = Math.round(grng(GRAPE.RATE_MIN, GRAPE.RATE_MAX));
-    if(alive < target) n += 3;
+    // 開幕ランプ: 発射数を最初の4秒かけて0→100%に立ち上げる。初手から満タン密度だと
+    // 単一発射点から一枚岩の弾塊が生まれ、着地する瞬間が理論上回避不能になる
+    // (定常状態は発射と画面外消滅が釣り合うので密度は変わらない)
+    const ramp = Math.min(1, b.t/240);
+    let n = Math.round(grng(GRAPE.RATE_MIN, GRAPE.RATE_MAX)*ramp);
+    if(alive < target*ramp) n += Math.round(3*ramp);
     else if(alive > target*1.25) n = 0;
-    // 葡萄本体: 下向き(90度)中心の広い扇にのみ散布する。ボスより上は撃たない(構造的な安置)
+    // 葡萄本体: 下向き(90度)中心の広い扇にのみ散布する。ボスより上は撃たない(構造的な安置)。
+    // 生存回廊に入り込む弾道はスキップ(見た目の密度は圧力維持の補充でほぼ変わらない)
     for(let i=0;i<n;i++){
-      grapeShot(b.x, b.y, 90+grapeBiasedOffset(GRAPE.SPREAD_DEG), m.speedMul);
+      const ang = 90+grapeBiasedOffset(GRAPE.SPREAD_DEG);
+      const spd = grng(GRAPE.SPEED_MIN, GRAPE.SPEED_MAX)*m.speedMul;
+      if(grapeHitsCorridor(b.x, b.y, ang, spd, b.t)) continue;
+      grapeShot(b.x, b.y, ang, spd);
     }
     // 房の強調: 乱数タイミングで同一角度付近へまとめ撃ち(速度はバラバラ→房状に自然分離)
     if(--b.burstT<=0){
       b.burstT = grng(GRAPE.BURST_INTERVAL_MIN, GRAPE.BURST_INTERVAL_MAX);
       const baseAng = 90+grapeBiasedOffset(GRAPE.SPREAD_DEG);
       const bn = Math.round(grng(GRAPE.BURST_N_MIN, GRAPE.BURST_N_MAX));
+      // 房も1発ずつ回廊チェックを通す(房が回廊を塞ぐと保証が崩れる)
       for(let i=0;i<bn;i++){
-        grapeShot(b.x, b.y, baseAng+grng(-GRAPE.BURST_SPREAD_DEG, GRAPE.BURST_SPREAD_DEG), m.speedMul);
+        const a2 = baseAng+grng(-GRAPE.BURST_SPREAD_DEG, GRAPE.BURST_SPREAD_DEG);
+        const spd = grng(GRAPE.SPEED_MIN, GRAPE.SPEED_MAX)*m.speedMul;
+        if(grapeHitsCorridor(b.x, b.y, a2, spd, b.t)) continue;
+        grapeShot(b.x, b.y, a2, spd);
       }
     }
-    // 上安置お仕置き: 自機がボスの高さ付近より上(下向き扇の外)にいる間だけ、超高速の
-    // 自機狙い弾を撃ち続ける。上に逃げてのボス周回・時間切れ狙いへの回答
+    // 上安置お仕置き: 自機がボスの高さ付近より上(下向き扇の外)にいる間、超高速の自機狙い
+    // 3wayを高頻度で撃ち込み続ける(確殺仕様)。角度・弾速の微ジッターで避けの隙間も潰す
     if(b.t>0 && player.y < b.y+GRAPE.PUNISH_MARGIN && b.t%m.punishIv===0){
-      shot(b.x, b.y, aimAt(b.x,b.y), GRAPE.PUNISH_SPEED*m.speedMul,
-           {color:"#ff4a5a", edge:"#ffd0d6", r:GRAPE.PUNISH_R});
+      const base = aimAt(b.x,b.y);
+      for(let k=0;k<GRAPE.PUNISH_NWAY;k++){
+        const off = (k-(GRAPE.PUNISH_NWAY-1)/2)*GRAPE.PUNISH_SPREAD_DEG + grng(-2,2);
+        shot(b.x, b.y, base+off*DEG, GRAPE.PUNISH_SPEED*m.speedMul*grng(0.9,1.1),
+             {color:"#ff4a5a", edge:"#ffd0d6", r:GRAPE.PUNISH_R});
+      }
     }
   },
 };
