@@ -24,20 +24,6 @@ function makeRng(seed){
   };
 }
 
-// 汎用: 直進弾(速度vx,vy)が高度帯 beltY±half を横切る間に、時刻の決定関数 corFn が示す
-// 回廊柱 |x - corFn(t)| < corW/2 に入り込むか。回廊による生存保証(両ルート共通の仕組み)
-function trajHitsCorridor(x0, y0, vx, vy, t0, beltY, half, corFn, bulletR, corW, corSpd){
-  if(vy<=0.05) return false;                     // ほぼ真横〜上向き: 帯に降りてこない
-  const t1=(beltY-half-y0)/vy, t2=(beltY+half-y0)/vy;
-  if(t2<=0) return false;                        // 既に帯より下へ向かっている
-  const ta=Math.max(t1,0);
-  const xa=x0+vx*ta, xb=x0+vx*t2;
-  const lo=Math.min(xa,xb)-bulletR, hi=Math.max(xa,xb)+bulletR;
-  const cor=corFn(t0+(ta+t2)/2);                 // 横断中間時刻の回廊位置(厳密予測)
-  const hw=corW/2 + corSpd*(t2-ta);              // 横断中の回廊移動ぶんを幅に上乗せ
-  return hi > cor-hw && lo < cor+hw;
-}
-
 // デモ中の自機表示・撃破後のセリフ・BGM等はどちらのルートも同一(棗みそのが相手のため)
 const demoPlayerSprite = dir => dir<0 ? IMG.MISONO_BACK_SPRITE_LEFT : dir>0 ? IMG.MISONO_BACK_SPRITE_RIGHT : IMG.MISONO_BACK_SPRITE;
 const bossSprite = b => b.dir<0 ? IMG.MISONO_SPRITE_LEFT : b.dir>0 ? IMG.MISONO_SPRITE_RIGHT : IMG.MISONO_SPRITE;
@@ -64,30 +50,15 @@ const WASH_P = {
   ACCENT_INTERVAL: 45,
   ACCENT_SPEED: 6.0,
   ACCENT_SPREAD: 10,
-  // 生存回廊(葡萄と同方式): デモの滞空帯(boss.y+BELT_OFF±BELT_HALF)を横切る瞬間に
-  // ゆっくり漂う回廊柱に入り込む弾道は発射しない。発射角ベースのレーンだと「レーンが
-  // 回ってくる前に発射済みの弾」が残って一度もクリーンにならないため、横断時刻の位置で
-  // 判定する(弾は直進なので発射時に厳密に計算できる)。二層逆回転の噛み合わせが偶然
-  // 塞がる「理論上回避不能な瞬間」をこれで排除する
-  BELT_OFF: 140,                     // 回廊を保証する高度: boss.y + この値(demoBeltYと一致)
-  BELT_HALF: 75,                     // 帯の半幅(px)。ボスの上下ドリフト分を含めて広めに取る
-  CORRIDOR_W: 70,                    // 回廊柱の幅(px)。大玉(r12)の直径24pxに対して余裕2.9倍
-  // AI用の敵機移動(move:true時): この間隔で近距離の移動目標を選び直す。
-  // ボスは目標へ毎フレーム5%の補間で寄るため、狭い目標距離なら「少しずつ漂う」動きになる。
-  // 回転弾幕の中心=ボス位置なので、渦全体がゆっくり流れて安地の暗記が効かなくなる
-  MOVE_INTERVAL: 100,
-  MOVE_RANGE: 80,
 };
-// 人間用=基準弾速そのまま(弾サイズ・密度は同じ、発射源は固定) /
-// AI用=弾速アップ+アーム数2倍(密度倍)+発射源が少しずつ移動
-const WASH_MODE_HUMAN = { speed:1.3, armMul:1, rBig:12, rSmall:6, rAcc:7, move:false };
-const WASH_MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6, rAcc:7, move:true };
+// 人間用=基準弾速そのまま(弾サイズ・密度は同じ) / AI用=弾速アップ+アーム数2倍(密度倍)。
+// 発射源は両モードとも固定: 移動させると弾の分布が薄まる上、ASIデモの探索AIと合わせて
+// 実機で処理落ちするため、「動かず・元の弾密度のまま」に戻した(ユーザー判断)。
+// 回避不能な瞬間への保険はデモの緊急ボム(3死以内クリアの妥協ライン)が担う
+const WASH_MODE_HUMAN = { speed:1.3, armMul:1, rBig:12, rSmall:6, rAcc:7 };
+const WASH_MODE_AI    = { speed:2.0, armMul:2, rBig:12, rSmall:6, rAcc:7 };
 const washMode = ()=> game.diff===0 ? WASH_MODE_HUMAN : WASH_MODE_AI;
 
-// 洗濯機の回廊柱の中心x(時刻の決定関数。最大速度~0.56px/fでゆっくり漂う)
-function washCorridorX(t){
-  return W/2 + Math.sin(t*0.004)*120 + Math.sin(t*0.0017)*50;
-}
 const twinSpiralSpell = {
   name:"", hp:880, time:3600, spell:false,
   onStart(b){ b.thetaA=0; b.thetaB=0; b.tx=W/2; b.ty=120; }, // 開始位置は画面上部中央
@@ -96,20 +67,11 @@ const twinSpiralSpell = {
     b.thetaA += WASH_P.OMEGA_A * (1 + WASH_P.MOD_AMP*Math.sin(TAU*b.t/WASH_P.PERIOD_A)) * DEG;
     b.thetaB -= WASH_P.OMEGA_B * (1 + WASH_P.MOD_AMP*Math.sin(TAU*b.t/WASH_P.PERIOD_B)) * DEG;
     const m = washMode();
-    // AI用(ASIデモも同モード)は発射源=渦の中心が少しずつ漂う。人間用は固定のまま
-    if(m.move && b.t>0 && b.t%WASH_P.MOVE_INTERVAL===0) bossMove(b, WASH_P.MOVE_RANGE);
-    // 生存回廊: デモの滞空帯を横切る瞬間に回廊柱へ入り込む弾道は撃たない(アクセント弾は
-    // 自機狙いの点的脅威なので対象外=回廊内でも安穏とはさせない)
-    const beltY = b.y + WASH_P.BELT_OFF;
-    const corHit = (a, spd) => trajHitsCorridor(
-      b.x, b.y, Math.cos(a)*spd, Math.sin(a)*spd, b.t,
-      beltY, WASH_P.BELT_HALF, washCorridorX, m.rBig, WASH_P.CORRIDOR_W, 0.6);
     // レイヤーA: 外層・大玉(時計回り、AI用はアーム数2倍)
     if(b.t%WASH_P.INTERVAL_A===0){
       const arms = WASH_P.ARMS_A*m.armMul;
       for(let k=0;k<arms;k++){
         const a = b.thetaA + k*(360/arms)*DEG;
-        if(corHit(a, WASH_P.SPEED_A*m.speed)) continue;
         shot(b.x,b.y,a,WASH_P.SPEED_A*m.speed,{color:k%2?"#ff8ae0":"#c96bff",edge:"#ffe6ff",r:m.rBig});
       }
     }
@@ -118,7 +80,6 @@ const twinSpiralSpell = {
       const arms = WASH_P.ARMS_B*m.armMul;
       for(let k=0;k<arms;k++){
         const a = b.thetaB + k*(360/arms)*DEG;
-        if(corHit(a, WASH_P.SPEED_B*m.speed)) continue;
         shot(b.x,b.y,a,WASH_P.SPEED_B*m.speed,{color:"#ff4a5a",edge:"#ffb8c0",r:m.rSmall});
       }
     }

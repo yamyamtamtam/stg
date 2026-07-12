@@ -805,8 +805,10 @@ function updatePlayer(){
     }
   }
 
-  // ボム(デモ中のAIはボムを使わない)
-  if(!game.demo && !game.dialog && (keys["x"]||keys["X"]||touch.bomb) && player.bombs>0 && player.bombTime<=0){
+  // ボム: 手動(X/ダブルタップ)。ASIデモも「探索が全経路死亡と判断し、猶予が尽きかけた」
+  // 緊急時に限り使用できる(完全回避が不可能な瞬間の保険。妥協ライン=ボム使用・3死以内でクリア)
+  const demoBomb = game.demo && demoDodge.dbg && demoDodge.dbg.mode==="emergency" && demoDodge.dbg.surv<12;
+  if(!game.dialog && (demoBomb || (!game.demo && (keys["x"]||keys["X"]||touch.bomb))) && player.bombs>0 && player.bombTime<=0){
     player.bombs--; player.bombTime=120; player.invul=Math.max(player.invul,150);
     game.shake=12; seBomb();
     cutIn = {t:0, dur:110, name:"陽符「民俗学の灯」", img:IMG.URARA_PORTRAIT, side:"left"};
@@ -823,7 +825,7 @@ function updatePlayer(){
 function burstMaybe(b){ if(Math.random()<0.2) burst(b.x,b.y,b.color,3,1.5); }
 
 //======================================================================
-// デモプレイ(ASI): 回避AIが低速移動・ボムなしで弾幕を避けながら撃破する。
+// デモプレイ(ASI): 回避AIが弾幕を避けながら撃破する(ボムは緊急時のみ自動使用)。
 // シナリオが demoLabel を定義すると難易度選択画面に専用ボタンが出る。
 // 使用するシナリオ側フィールド: demoLabel / demoDiff / demoEndWho / demoEndText / demoReplayText
 //======================================================================
@@ -848,8 +850,11 @@ function demoExit(){
 // 毎フレーム方向転換できる経路をビームサーチでDEMO_Tフレーム先まで探索し、生き残れる
 // ルートが存在する限りそれを見つけて一手目を実行、次フレームで再探索する(receding horizon)。
 // どの経路でも生き残れない場合は最も長く生存できる経路を選ぶ(それでも当たれば普通に被弾する)
-let DEMO_T = 110;                  // ビーム探索の先読みフレーム数(約1.8秒)
-let DEMO_BEAM = 64;                // ビーム幅(各フレームで保持する経路候補の上限)
+let DEMO_T = 80;                   // ビーム探索の先読みフレーム数(約1.3秒)。伸ばすほど賢いが
+                                   // 1フレームあたりの計算が重くなり実機でカクつく(実測の妥協点)
+let DEMO_BEAM = 48;                // ビーム幅(各フレームで保持する経路候補の上限)
+let DEMO_REPLAN = 2;               // 再探索の間隔(frame)。1=毎フレーム。2で計算負荷が半分になり、
+                                   // 60fps予算に収まる(間の1フレームは直前の手を継続)
 const DEMO_MARGIN = 1.5;           // 当たり判定に上乗せする安全マージン(px)
 // ASIデモ専用の仮想フロア: 最下段の帯は上方向にしか逃げられない死地で、実測でも
 // 被弾がほぼ全てここに集中したため、デモの自機はそもそも立ち入れないようにする
@@ -894,7 +899,13 @@ function demoSafeSpot(){
   }
   return {x:x0+((bi%CX)+0.5)*cw, y:y0+(Math.floor(bi/CX)+0.5)*ch};
 }
+// 使い回しバッファ: 探索は毎フレーム数十万要素を扱うため、Mapや都度newの配列では
+// アロケーションとGCで実機がカクつく。typed arrayをモジュールレベルで保持し伸長のみ行う
+const DD = { posCap:0, bulCap:0, cellCap:0, seenGen:1, stCap:2048 };
 function demoDodge(){
+  // 再探索の間引き: 余裕がある間はDEMO_REPLANフレームに1回だけ全探索し、間は直前の
+  // 一手を継続する(マージン1.5pxが1フレーム分の継続誤差を吸収する)
+  if(demoDodge.hold>0){ demoDodge.hold--; return demoDodge.cached; }
   const px0=player.x, py0=player.y;
   const inv=player.invul; // 残り無敵フレーム: この間は当たらないので「弾を突っ切って再配置」も許す
   const FLOOR=H-DEMO_FLOOR_MARGIN;
@@ -910,113 +921,162 @@ function demoDodge(){
     const br = Math.hypot(b.vx,b.vy)*DEMO_T + b.r + reach;
     if(dx*dx+dy*dy < br*br) bs.push(b);
   }
-  // 弾のt=0..DEMO_Tの位置を前計算し、時刻別の32px格子に登録する
-  // (ビーム中の衝突判定を「近傍9セルに載っている数発」だけに絞るため)
   const n=bs.length, S=DEMO_T+1, GC=32;
   const gx0=Math.floor((px0-reach)/GC), gy0=Math.floor((py0-reach)/GC);
-  const gw=Math.ceil(reach*2/GC)+2, gh=gw;
-  const bxA=new Float64Array(n*S), byA=new Float64Array(n*S), rrA=new Float64Array(n);
-  const buckets=new Map(); // key = t*4096 + セル番号 → 弾indexの配列
+  const gw=Math.ceil(reach*2/GC)+2, gh=gw, CELLS=gw*gh, TC=S*CELLS;
+  // バッファ確保(不足時のみ伸長。新規確保はゼロ初期化済み、再利用時は使う範囲だけゼロ埋め)
+  if(n*S>DD.posCap){ DD.posCap=Math.ceil(n*S*1.4)+1024;
+    DD.bx=new Float64Array(DD.posCap); DD.by=new Float64Array(DD.posCap);
+    DD.cellOf=new Int32Array(DD.posCap); DD.idx=new Int32Array(DD.posCap); }
+  if(n>DD.bulCap){ DD.bulCap=n+64; DD.rr=new Float64Array(DD.bulCap); }
+  if(TC+1>DD.cellCap){ DD.cellCap=Math.ceil((TC+1)*1.4);
+    DD.cnt=new Int32Array(DD.cellCap); DD.off=new Int32Array(DD.cellCap+1); }
+  else DD.cnt.fill(0,0,TC);
+  if(!DD.ax){
+    DD.ax=new Float64Array(DD.stCap); DD.ay=new Float64Array(DD.stCap);
+    DD.ac=new Float64Array(DD.stCap); DD.af=new Int32Array(DD.stCap);
+    DD.nx=new Float64Array(DD.stCap); DD.ny=new Float64Array(DD.stCap);
+    DD.nc=new Float64Array(DD.stCap); DD.nf=new Int32Array(DD.stCap);
+    DD.seenStamp=new Int32Array(32768); DD.seenSlot=new Int32Array(32768); // 4px格子: (x>>2)*161+(y>>2) < 19481
+    DD.seen16=new Int32Array(2048);                                        // 16px粗格子: (x>>4)*41+(y>>4) < 1271
+    DD.ord=[];
+  }
+  const {bx,by,cellOf,idx,rr,cnt,off}=DD;
+  // pass1: 全弾のt=0..Tの位置とセルを前計算し、セル別に数える
   for(let i=0;i<n;i++){
-    const b=bs[i]; rrA[i]=b.r+player.r+DEMO_MARGIN;
+    const b=bs[i]; rr[i]=b.r+player.r+DEMO_MARGIN;
+    let x=b.x, y=b.y;
+    const base=i*S;
     for(let t=0;t<S;t++){
-      const x=b.x+b.vx*t, y=b.y+b.vy*t;
-      bxA[i*S+t]=x; byA[i*S+t]=y;
+      bx[base+t]=x; by[base+t]=y;
       const ci=Math.floor(x/GC)-gx0, cj=Math.floor(y/GC)-gy0;
-      if(ci>=0&&ci<gw&&cj>=0&&cj<gh){
-        const key=t*4096+cj*gw+ci;
-        let arr=buckets.get(key); if(!arr){arr=[]; buckets.set(key,arr);}
-        arr.push(i);
-      }
+      if(ci>=0&&ci<gw&&cj>=0&&cj<gh){ const c=t*CELLS+cj*gw+ci; cellOf[base+t]=c; cnt[c]++; }
+      else cellOf[base+t]=-1;
+      x+=b.vx; y+=b.vy;
     }
   }
+  // pass2: 接頭和 → pass3: 逆引き表(cntを書き込みカーソルとして再利用)
+  off[0]=0;
+  for(let c=0;c<TC;c++) off[c+1]=off[c]+cnt[c];
+  for(let c=0;c<TC;c++) cnt[c]=off[c];
+  for(let p=0;p<n*S;p++){ const c=cellOf[p]; if(c>=0) idx[cnt[c]++]=(p/S)|0; }
   const safe = demoSafeSpot();
   const homeX = boss ? boss.x : W/2;
   // ルートが推奨滞空高度(demoBeltY)を定義している場合、それより大きく下に降りる経路を
-  // 終端採点で強く抑止する(回転弾幕の外周=床付近はアームの横薙ぎが自機より速い死地。
-  // 一度降りると登り直せず、床で轢かれる事故が実測の敗因)
+  // 終端採点で強く抑止する(回転弾幕の外周=床付近はアームの横薙ぎが自機より速い死地)
   const beltHint = curRoute().demoBeltY;
   const beltC = (beltHint && boss) ? clamp(beltHint(boss), 160, FLOOR-40) : null;
   // ビームサーチ: 状態=(位置, 経路中の最小クリアランス, 最初の一手)。毎フレーム17行動で
   // 分岐し、4px格子で重複排除して上位DEMO_BEAM件だけ残す。生存が最優先(死ぬ枝は捨てる)
-  let beam=[{x:px0, y:py0, clear:1e9, first:-1}];
-  let emgSurv=-1, emgFirst=0; // 全滅時フォールバック: 最も長く生存できた経路の一手目
+  let aN=1; DD.ax[0]=px0; DD.ay[0]=py0; DD.ac[0]=1e9; DD.af[0]=-1;
+  let emgSurv=-1, emgFirst=0;
+  const stamp=DD.seenStamp, slot=DD.seenSlot;
   for(let t=1;t<=DEMO_T;t++){
-    const nb=new Map();
-    for(const st of beam){
+    const gen=++DD.seenGen;
+    let bN=0;
+    for(let si=0;si<aN;si++){
+      const sx=DD.ax[si], sy=DD.ay[si], sc=DD.ac[si], sf=DD.af[si];
       for(let ai=0;ai<DEMO_ACTS.length;ai++){
         const a=DEMO_ACTS[ai];
         const sp=(a.fast?player.speed:player.slowSpeed)*((a.x&&a.y)?0.7071:1);
-        const x=clamp(st.x+a.x*sp,12,W-12), y=clamp(st.y+a.y*sp,12,FLOOR);
+        let x=sx+a.x*sp; if(x<12)x=12; else if(x>W-12)x=W-12;
+        let y=sy+a.y*sp; if(y<12)y=12; else if(y>FLOOR)y=FLOOR;
         if(y<yMin) continue;
-        const first = st.first<0 ? ai : st.first;
+        const first = sf<0 ? ai : sf;
         // 壁(左右・仮想フロア)との距離もクリアランスに含める(壁際は逃げ道が半減する)
-        let clear=Math.min(st.clear, x-14, W-14-x, FLOOR+12-y);
+        let clear=sc;
+        const wall=Math.min(x-14, W-14-x, FLOOR+12-y);
+        if(wall<clear)clear=wall;
         let dead=false;
-        // 無敵中(t<inv)は当たっても死なないが、弾との距離はクリアランスとして常に採点する。
-        // これを省くと無敵中の経路採点で弾が「見えず」、無敵時間を弾の密集地のど真ん中で
-        // 浪費して切れた瞬間に囲まれている、という事故が起きる(実測で発生した敗因)
-        const vulnerable = t>=inv;
-        {
-          const ci=Math.floor(x/GC)-gx0, cj=Math.floor(y/GC)-gy0;
-          for(let j2=cj-1;j2<=cj+1&&!dead;j2++)for(let i2=ci-1;i2<=ci+1&&!dead;i2++){
-            if(i2<0||i2>=gw||j2<0||j2>=gh)continue;
-            const arr=buckets.get(t*4096+j2*gw+i2);
-            if(!arr)continue;
-            for(const bi of arr){
-              const dx=bxA[bi*S+t]-x, dy=byA[bi*S+t]-y;
-              const d2=dx*dx+dy*dy, rr=rrA[bi];
-              if(d2<rr*rr){
-                if(vulnerable){ dead=true; break; }
-                clear=Math.min(clear, Math.sqrt(d2)-rr); // 無敵中の被り: 死なないが最低評価
+        // 無敵中(t<inv)は当たっても死なないため衝突は無視してよいが、弾との距離は
+        // 常に採点する(無視すると無敵中に弾の密集地へ入り込み、切れた瞬間に囲まれる)
+        const ci=Math.floor(x/GC)-gx0, cj=Math.floor(y/GC)-gy0;
+        for(let j2=cj-1;j2<=cj+1&&!dead;j2++){
+          if(j2<0||j2>=gh)continue;
+          const rowBase=t*CELLS+j2*gw;
+          for(let i2=ci-1;i2<=ci+1&&!dead;i2++){
+            if(i2<0||i2>=gw)continue;
+            const c=rowBase+i2;
+            for(let k=off[c];k<off[c+1];k++){
+              const bi=idx[k], p=bi*S+t;
+              const dx=bx[p]-x, dy=by[p]-y;
+              const d2=dx*dx+dy*dy, r=rr[bi];
+              if(d2<r*r){
+                if(t>=inv){ dead=true; break; }
+                const d=Math.sqrt(d2)-r; if(d<clear)clear=d; // 無敵中の被り: 死なないが最低評価
                 continue;
               }
-              const near=rr+24;
-              if(d2<near*near){ const d=Math.sqrt(d2)-rr; if(d<clear)clear=d; }
+              const near=r+24;
+              if(d2<near*near){ const d=Math.sqrt(d2)-r; if(d<clear)clear=d; }
             }
           }
         }
         if(dead){ if(t-1>emgSurv){emgSurv=t-1; emgFirst=first;} continue; }
-        const key=(Math.round(x)>>2)*512+(Math.round(y)>>2);
-        const cur=nb.get(key);
-        if(!cur || clear>cur.clear) nb.set(key,{x,y,clear,first});
+        const key=(Math.round(x)>>2)*161+(Math.round(y)>>2);
+        if(stamp[key]===gen){
+          const s2=slot[key];
+          if(clear>DD.nc[s2]){ DD.nx[s2]=x; DD.ny[s2]=y; DD.nc[s2]=clear; DD.nf[s2]=first; }
+        }else{
+          stamp[key]=gen; slot[key]=bN;
+          DD.nx[bN]=x; DD.ny[bN]=y; DD.nc[bN]=clear; DD.nf[bN]=first; bN++;
+        }
       }
     }
-    if(nb.size===0){
+    if(bN===0){
       demoDodge.dbg={mode:"emergency", surv:emgSurv}; // 全経路死亡: 最長生存の一手(診断用)
-      const a=DEMO_ACTS[emgFirst]; return {dx:a.x,dy:a.y,fast:a.fast};
+      const a=DEMO_ACTS[emgFirst];
+      demoDodge.cached={dx:a.x,dy:a.y,fast:a.fast}; demoDodge.hold=0; // 緊急時は毎フレーム再探索
+      return demoDodge.cached;
     }
-    beam=[...nb.values()];
-    if(beam.length>DEMO_BEAM){
-      beam.sort((p,q)=>q.clear-p.clear);
-      // 空間的に散らして残す: 16px粗格子ごとに最良1件を優先確保し、残り枠を評価順で埋める。
-      // 評価順だけで刈ると候補が一つの袋小路に固まり、別方向にある安全地帯(特に無敵中の
-      // 長距離再配置先)を探索から失う(実測: 無敵残39fで「どこへ行っても死ぬ」と誤判断)
-      const picked=[], seen=new Set(), rest=[];
-      for(const st of beam){
-        const k=(Math.round(st.x)>>4)*64+(Math.round(st.y)>>4);
-        if(!seen.has(k)){ seen.add(k); picked.push(st); } else rest.push(st);
+    // 次世代を確定。あふれた場合は空間的に散らして残す: 16px粗格子ごとに最良1件を優先確保し、
+    // 残り枠を評価順で埋める(評価順だけで刈ると候補が一つの袋小路に固まり、別方向にある
+    // 安全地帯(特に無敵中の長距離再配置先)を探索から失う)
+    if(bN>DEMO_BEAM){
+      const ord=DD.ord; ord.length=bN;
+      for(let i2=0;i2<bN;i2++) ord[i2]=i2;
+      ord.sort((p,q)=>DD.nc[q]-DD.nc[p]);
+      const gen16=++DD.seenGen, seen16=DD.seen16;
+      let w=0;
+      for(const oi of ord){                        // 粗格子ごとの最良を先に
+        if(w>=DEMO_BEAM) break;
+        const k16=(Math.round(DD.nx[oi])>>4)*41+(Math.round(DD.ny[oi])>>4);
+        if(seen16[k16]===gen16) continue;
+        seen16[k16]=gen16;
+        DD.ax[w]=DD.nx[oi]; DD.ay[w]=DD.ny[oi]; DD.ac[w]=DD.nc[oi]; DD.af[w]=DD.nf[oi]; w++;
+        DD.nc[oi]=-1e18;                           // 選抜済みマーク
       }
-      beam = picked.slice(0,DEMO_BEAM);
-      for(const st of rest){ if(beam.length>=DEMO_BEAM) break; beam.push(st); }
+      for(const oi of ord){                        // 残り枠を評価順で
+        if(w>=DEMO_BEAM) break;
+        if(DD.nc[oi]===-1e18) continue;
+        DD.ax[w]=DD.nx[oi]; DD.ay[w]=DD.ny[oi]; DD.ac[w]=DD.nc[oi]; DD.af[w]=DD.nf[oi]; w++;
+      }
+      aN=w;
+    }else{
+      for(let i2=0;i2<bN;i2++){ DD.ax[i2]=DD.nx[i2]; DD.ay[i2]=DD.ny[i2]; DD.ac[i2]=DD.nc[i2]; DD.af[i2]=DD.nf[i2]; }
+      aN=bN;
     }
   }
   // 完走した経路の中から、到達点の良さ(余裕 > 安全セルへの近さ > ボス直下=射線維持)で選ぶ
-  let best=null, bk=-Infinity;
-  for(const st of beam){
-    let k = Math.min(st.clear,40)*40
-      - ((st.x-safe.x)**2)*0.04 - ((st.y-safe.y)**2)*0.03
-      - ((st.x-homeX)**2)*0.0008;
+  let bi=-1, bk=-Infinity, bClear=0;
+  for(let si=0;si<aN;si++){
+    const x=DD.ax[si], y=DD.ay[si], c=DD.ac[si];
+    let k = Math.min(c,40)*40
+      - ((x-safe.x)**2)*0.04 - ((y-safe.y)**2)*0.03
+      - ((x-homeX)**2)*0.0008;
     // 画面端の縦帯は「今は弾が来ない風下の影」でも、ボスの移動で影が消えると壁2面に
     // 挟まれた即詰みの箱になる(実測: 全死が左下隅)。端に立つ選択自体を強く抑止する
-    if(st.x<100) k -= 3000 + (100-st.x)*120;
-    if(st.x>W-100) k -= 3000 + (st.x-(W-100))*120;
-    if(beltC!==null && st.y > beltC+110) k -= (st.y-(beltC+110))*40;
-    if(k>bk){bk=k; best=st;}
+    if(x<100) k -= 3000 + (100-x)*120;
+    if(x>W-100) k -= 3000 + (x-(W-100))*120;
+    if(beltC!==null && y > beltC+110) k -= (y-(beltC+110))*40;
+    if(k>bk){bk=k; bi=si; bClear=c;}
   }
-  demoDodge.dbg={mode:"ok", beamN:beam.length, clear:+best.clear.toFixed(1)};
-  const a=DEMO_ACTS[best.first<0 ? 0 : best.first];
-  return {dx:a.x, dy:a.y, fast:a.fast};
+  demoDodge.dbg={mode:"ok", beamN:aN, clear:+bClear.toFixed(1)};
+  const a=DEMO_ACTS[DD.af[bi]<0 ? 0 : DD.af[bi]];
+  demoDodge.cached={dx:a.x, dy:a.y, fast:a.fast};
+  // 余裕がある時だけ再探索を間引く。弾との余裕が小さい(=精密な糸通し中)は毎フレーム
+  // 再探索して品質を保つ
+  demoDodge.hold = bClear < 12 ? 0 : DEMO_REPLAN-1;
+  return demoDodge.cached;
 }
 
 function playerHit(){
