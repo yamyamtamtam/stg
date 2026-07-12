@@ -1,6 +1,6 @@
 // PWAオフラインキャッシュ(手書き。自動生成ではない)
 // キャッシュ対象を変えたら CACHE のバージョン番号を上げて古いキャッシュを破棄させること
-const CACHE = 'it-stg-v9';
+const CACHE = 'it-stg-v10';
 const ASSETS = [
   './',
   './index.html',
