@@ -27,7 +27,7 @@ function playBgm(track){
 function updateBgm(){
   if(INTRO_ORDER.includes(game.state) || game.state==="chara"){ playBgm(BGM.TITLE); return; }
   if(game.state==="play"){
-    const sb = curScenario() && curScenario().bgm;
+    const sb = curScenario() && curRoute().bgm;
     if(sb && (boss || game.dialog || game.demo)){ playBgm(BGM[sb]); return; }
     playBgm(boss ? BGM.BOSS : BGM.STAGE);
     return;
@@ -225,6 +225,10 @@ addEventListener("keydown", e=>{
   if(game.state==="chara" && !e.repeat && (e.key==="z"||e.key==="Z"||e.key==="Escape")){
     seMenuConfirm(); game.state="scenario"; return; // 紹介画面からシナリオ選択へ戻る
   }
+  if(game.state==="route" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
+    game.route = clamp(game.route + (e.key==="ArrowDown"?1:-1), 0, curScenario().routes.length-1);
+    seMenuMove();
+  }
   if((game.state==="over"||game.state==="clear") && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
     game.endSel = clamp(game.endSel + (e.key==="ArrowDown"?1:-1), 0, END_CHIPS.length-1);
     seMenuMove();
@@ -286,6 +290,11 @@ cv.addEventListener("touchstart", e=>{
       if(chip){ game.scenario=chip.i; introAdvance(); touch.lastTap=0; return; } // シナリオをタップしたら即次の画面へ
     }
     if(game.state==="chara"){ seMenuConfirm(); game.state="scenario"; touch.lastTap=0; return; } // どこをタップしても戻る
+    if(game.state==="route"){
+      const {x:cx,y:cy} = clientToCanvas(t.clientX, t.clientY);
+      const chip=routeChips().find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
+      if(chip){ game.route=chip.i; introAdvance(); touch.lastTap=0; return; } // ルートをタップしたら即次の画面へ
+    }
     if(INTRO_ORDER.includes(game.state)){ introAdvance(); touch.lastTap=0; return; }
     if(game.state==="over"||game.state==="clear"){
       // エンドメニュー(もう一度やる/タイトルに戻る)のボタンタップのみ反応
@@ -336,6 +345,7 @@ const game = {
   shake:0,
   diff:1,               // 難易度: 0=EASY 1=NORMAL 2=HARD 3=LUNATIC
   scenario:0,           // シナリオ: 0=ホモガキミームの海 1=オタサーの森
+  route:0,              // ルート分岐のあるシナリオでの選択(routes配列のインデックス。分岐なしなら未使用)
   tutIdx:0, tutTimer:0,  // 操作チュートリアル(自動再生)の進行
   overPending:false,     // ゲームオーバー会話が進行中/予約済み(ボス撃破会話に上書きされないようにする)
   endSel:0,              // クリア/ゲームオーバー画面のメニュー選択: 0=もう一度やる 1=タイトルに戻る
@@ -364,8 +374,8 @@ const DIFF_CHIPS = DIFF_NAMES.map((name,i)=>({
 // (例: シナリオ4の人間用/AI用二択)。game.diff はその配列のインデックスになり、
 // DIFF_BULLET_SPEED 等の共通テーブルも同じインデックスで引かれる
 function diffOptions(){
-  const sc = SCENARIOS[game.scenario];
-  return (sc && sc.diffOptions) || null;
+  const r = SCENARIOS[game.scenario] && curRoute();
+  return (r && r.diffOptions) || null;
 }
 function diffCount(){ const o = diffOptions(); return o ? o.length : DIFF_NAMES.length; }
 function diffChips(){
@@ -380,13 +390,23 @@ function diffChips(){
 // シナリオが demoLabel を定義していると難易度選択の下にデモプレイボタンが出る(シナリオ4のASIデモ)。
 // ラベルが長い場合は220pxの最小幅からはみ出さないよう文字幅に合わせて広げる
 function demoChip(){
-  const sc = SCENARIOS[game.scenario];
-  if(!sc || !sc.demoLabel) return null;
+  const r = SCENARIOS[game.scenario] && curRoute();
+  if(!r || !r.demoLabel) return null;
   const chips = diffChips();
   const bottom = chips[chips.length-1].y + chips[0].h;
   ctx.font="bold 14px monospace";
-  const w = Math.max(220, ctx.measureText("▶ "+sc.demoLabel).width + 40);
+  const w = Math.max(220, ctx.measureText("▶ "+r.demoLabel).width + 40);
   return {x:(W-w)/2, y:bottom+16, w, h:40};
+}
+// route分岐のあるシナリオ(routes配列)専用の選択カード(縦一列。シナリオ選択画面と同じ構造)
+const ROUTE_ROW_H = 64, ROUTE_ROW_GAP = 12;
+function routeChips(){
+  const routes = (curScenario().routes) || [];
+  return routes.map((r,i)=>({
+    r, i, w:320, h:ROUTE_ROW_H,
+    x: (W-320)/2,
+    y: (H/2 - ((ROUTE_ROW_H+ROUTE_ROW_GAP)*routes.length-ROUTE_ROW_GAP)/2) + i*(ROUTE_ROW_H+ROUTE_ROW_GAP),
+  }));
 }
 
 // シナリオ選択画面のキャラクター紹介ボタン(シナリオカードとは別デザインで、
@@ -416,15 +436,20 @@ function backToTitle(){
 //----------------------------------------------------------------------
 // 開幕演出: タイトル→シナリオ選択→難易度選択→自機紹介→操作チュートリアル
 //----------------------------------------------------------------------
-const INTRO_ORDER = ["title","scenario","difficulty","playerinfo","tutorial"];
+const INTRO_ORDER = ["title","scenario","route","difficulty","playerinfo","tutorial"];
 // シナリオレジストリ: js/scenarios/*.js が registerScenario() で自分を登録する。
 // 契約: {name, sub, buildStage(), dialogPre, dialogPost,
 //        boss:{name, spells, sprite(b), cutIn, dialog(set)}}
 // spells の各要素: {name, hp, time, spell, fire(b)} + 任意で onStart(b)(フェーズ開始時) /
 // checkAdvance(b)(trueを返すとHP残でもフェーズ遷移。召喚全滅で発狂など)
+// 分岐のあるシナリオ(例: シンギュラリティ)は上記契約の代わりに routes:[{...}, ...] を定義できる。
+// 各要素は上記と同じ契約(+diffOptions/demoLabel等)を持つ独立したルート設定で、
+// name/sub がルート選択画面のカード表示に使われる。game.route がそのインデックス
 const SCENARIOS = [];
 function registerScenario(sc){ SCENARIOS.push(sc); }
 function curScenario(){ return SCENARIOS[game.scenario]; }
+// routesを持つシナリオでは選択中のルート設定を、持たなければシナリオ自身をそのまま返す
+function curRoute(){ const sc = curScenario(); return sc.routes ? sc.routes[game.route] : sc; }
 // demo: チュートリアル中に自機を自動操作して見せる実演の種類
 const TUTORIAL_STEPS_KB = [
   {key:"矢印キー", desc:"移動", demo:"move"},
@@ -443,8 +468,11 @@ function introAdvance(){
   if(idx===-1) return;
   seMenuConfirm();
   if(idx===INTRO_ORDER.length-1){ keys["Shift"]=false; startGame(); return; }
-  game.state = INTRO_ORDER[idx+1];
+  let next = INTRO_ORDER[idx+1];
+  if(next==="route" && !curScenario().routes) next = INTRO_ORDER[idx+2]; // ルート分岐のないシナリオはこの画面を飛ばす
+  game.state = next;
   if(game.state==="scenario"){ game.charaFocus=false; }
+  if(game.state==="route"){ game.route = clamp(game.route, 0, curScenario().routes.length-1); }
   if(game.state==="difficulty"){ game.diff = clamp(game.diff, 0, diffCount()-1); game.demoFocus=false; } // シナリオ専用難易度は選択肢数が違う
   if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; resetTutorialDemoStep(); }
 }
@@ -525,7 +553,7 @@ function updateTutorialDemo(){
 }
 
 const player = {
-  x:W/2, y:H-80, r:3, grazeR:16,   // r: 小さい敵弾(r:4)程度の判定。drawHitboxMarker のドットと同サイズ
+  x:W/2, y:H-80, r:1.5, grazeR:16, // r=自機の真ん中の小さい玉(直径3px)だけが当たり判定
   speed:4.0, slowSpeed:1.8,
   lives:3, bombs:3, power:1, slowLerp:0,
   invul:0, bombTime:0,
@@ -635,7 +663,7 @@ function at(f,fn){ timeline.push({f,fn}); }
 
 function buildStage(){
   timeline=[]; tlIndex=0; stageT=0;
-  curScenario().buildStage();
+  curRoute().buildStage();
 }
 
 //======================================================================
@@ -657,9 +685,9 @@ function startDialogueOver(){
   eBullets.length=0; pBullets.length=0;
 }
 function dialogList(){
-  if(game.dialog.set==="post") return curScenario().dialogPost;
+  if(game.dialog.set==="post") return curRoute().dialogPost;
   if(game.dialog.set==="over") return DIALOG_OVER;
-  return curScenario().dialogPre;
+  return curRoute().dialogPre;
 }
 function advanceDialog(){
   if(!game.dialog) return;
@@ -681,12 +709,12 @@ function spawnBoss(){
   boss = {
     x:W/2, y:-60, tx:W/2, ty:120, r:20, t:0,
     phase:-1, hp:0, maxHp:1, spellTime:0, spellMax:0,
-    name: curScenario().boss.name,
+    name: curRoute().boss.name,
     dead:false, moveT:0, dir:0, dmgMult:1, enraged:false,
   };
   nextPhase();
 }
-function curSpells(){ return curScenario().boss.spells; }
+function curSpells(){ return curRoute().boss.spells; }
 function bossMove(b, range=120){
   b.tx = clamp(b.x + rand(-range,range), 60, W-60);
   b.ty = clamp(120 + rand(-40,40), 70, 200);
@@ -705,7 +733,7 @@ function nextPhase(){
   eBullets.length = 0; // 弾消し
   enemies = enemies.filter(e=>!e.zType); // 前フェーズの召喚キャラ(チー牛/豚)を消す
   burst(boss.x,boss.y,"#ffd76e",30,5);
-  if(sp.spell) cutIn = {t:0, dur:150, name:sp.name, img: curScenario().boss.cutIn, side:"right"};
+  if(sp.spell) cutIn = {t:0, dur:150, name:sp.name, img: curRoute().boss.cutIn, side:"right"};
   boss.tx=W/2; boss.ty=120;
   if(sp.onStart) sp.onStart(boss);
 }
@@ -764,11 +792,12 @@ function updatePlayer(){
     }
     return;
   }
-  // 入力: 通常はキー/タッチ、デモ中は回避AIが操作(常に低速・ボムなし・オートショット)
+  // 入力: 通常はキー/タッチ、デモ中は回避AIが操作(低速/高速は経路探索が自動選択・
+  // ボムなし・オートショット)
   let slow, dx=0, dy=0;
   if(game.demo){
     const m = demoDodge();
-    dx=m.dx; dy=m.dy; slow=true;
+    dx=m.dx; dy=m.dy; slow=!m.fast;
   }else{
     slow = keys["Shift"] || touch.slow;
     if(keys["ArrowLeft"])dx--; if(keys["ArrowRight"])dx++;
@@ -778,7 +807,8 @@ function updatePlayer(){
   const sp = slow ? player.slowSpeed : player.speed;
   if(dx&&dy){dx*=0.7071;dy*=0.7071;}
   player.x=clamp(player.x+dx*sp, 12, W-12);
-  player.y=clamp(player.y+dy*sp, 12, H-12);
+  // デモ中は仮想フロア(demoDodgeのシミュレーションと同じ下限)より下に降りない
+  player.y=clamp(player.y+dy*sp, 12, game.demo ? H-DEMO_FLOOR_MARGIN : H-12);
   let hIn = dx;
   if(!game.demo && (touch.dx||touch.dy)){
     player.x=clamp(player.x+touch.dx, 12, W-12);
@@ -810,8 +840,10 @@ function updatePlayer(){
     }
   }
 
-  // ボム(デモ中のAIはボムを使わない)
-  if(!game.demo && !game.dialog && (keys["x"]||keys["X"]||touch.bomb) && player.bombs>0 && player.bombTime<=0){
+  // ボム: 手動(X/ダブルタップ)。ASIデモも「探索が全経路死亡と判断し、猶予が尽きかけた」
+  // 緊急時に限り使用できる(完全回避が不可能な瞬間の保険。妥協ライン=ボム使用・3死以内でクリア)
+  const demoBomb = game.demo && demoDodge.dbg && demoDodge.dbg.mode==="emergency" && demoDodge.dbg.surv<12;
+  if(!game.dialog && (demoBomb || (!game.demo && (keys["x"]||keys["X"]||touch.bomb))) && player.bombs>0 && player.bombTime<=0){
     player.bombs--; player.bombTime=120; player.invul=Math.max(player.invul,150);
     game.shake=12; seBomb();
     cutIn = {t:0, dur:110, name:"陽符「民俗学の灯」", img:IMG.URARA_PORTRAIT, side:"left"};
@@ -828,18 +860,18 @@ function updatePlayer(){
 function burstMaybe(b){ if(Math.random()<0.2) burst(b.x,b.y,b.color,3,1.5); }
 
 //======================================================================
-// デモプレイ(ASI): 回避AIが低速移動・ボムなしで弾幕を避けながら撃破する。
+// デモプレイ(ASI): 回避AIが弾幕を避けながら撃破する(ボムは緊急時のみ自動使用)。
 // シナリオが demoLabel を定義すると難易度選択画面に専用ボタンが出る。
 // 使用するシナリオ側フィールド: demoLabel / demoDiff / demoEndWho / demoEndText / demoReplayText
 //======================================================================
 function startDemo(){
-  game.diff = curScenario().demoDiff ?? game.diff;
+  game.diff = curRoute().demoDiff ?? game.diff;
   startGame();
   game.demo = true;
   timeline=[]; tlIndex=0;   // 会話・道中なしで即ボス戦
   game.banner=null;
   player.power=4;
-  player.invul=0;           // ASIは被弾しないので開幕無敵は不要(バリア誤発動も防ぐ)
+  player.invul=0;           // 開幕無敵なし: ASIは回避AIだけで凌ぐ(バリア誤発動も防ぐ)
   spawnBoss();
 }
 function demoExit(){
@@ -848,34 +880,242 @@ function demoExit(){
   boss=null; eBullets=[]; pBullets=[]; enemies=[]; effects=[]; items=[]; cutIn=null;
   backToTitle();
 }
-// 回避AI: 9方向それぞれについて数フレーム先の弾との接近度を採点し、最も安全な方向へ動く。
-// ホームポジション(ボス直下・画面下部)への弱い引力で射線も維持する
+// 回避AI(経路探索式・チート無し): 実際の当たり判定(player.r)+安全マージンでの衝突を、
+// 弾の等速直線予測に対して厳密にシミュレートする(シナリオ4の全弾種は直進弾なので予測は正確)。
+// 毎フレーム方向転換できる経路をビームサーチでDEMO_Tフレーム先まで探索し、生き残れる
+// ルートが存在する限りそれを見つけて一手目を実行、次フレームで再探索する(receding horizon)。
+// どの経路でも生き残れない場合は最も長く生存できる経路を選ぶ(それでも当たれば普通に被弾する)
+let DEMO_T = 80;                   // ビーム探索の先読みフレーム数(約1.3秒)。伸ばすほど賢いが
+                                   // 1フレームあたりの計算が重くなり実機でカクつく(実測の妥協点)
+let DEMO_BEAM = 48;                // ビーム幅(各フレームで保持する経路候補の上限)
+let DEMO_REPLAN = 2;               // 再探索の間隔(frame)。1=毎フレーム。2で計算負荷が半分になり、
+                                   // 60fps予算に収まる(間の1フレームは直前の手を継続)
+const DEMO_MARGIN = 1.5;           // 当たり判定に上乗せする安全マージン(px)
+// ASIデモ専用の仮想フロア: 最下段の帯は上方向にしか逃げられない死地で、実測でも
+// 被弾がほぼ全てここに集中したため、デモの自機はそもそも立ち入れないようにする
+// (シミュレーションと実移動の両方を同じ値でクランプし、計画と現実のズレを防ぐ)
+const DEMO_FLOOR_MARGIN = 40;
+const DEMO_DIRS = [[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+const DEMO_ACTS = (()=>{
+  const a=[{x:0,y:0,fast:false}];
+  for(const [x,y] of DEMO_DIRS.slice(1)) a.push({x,y,fast:false},{x,y,fast:true});
+  return a;
+})();
+// 戦略層: 立入可能域(お仕置き圏の下〜仮想フロア)を粗い2Dセルに分割し、今後150フレームの
+// 弾の通過量が最少のセル中心を「次に立つべき場所」として選ぶ。戦術層(2段先読み42f)は
+// そこへ引力を受けるため、大玉の壁が閉じ切る前に疎な領域へ縦横どちらにも先回りできる。
+// 候補を中央寄り[70, W-70]に限定するのは、画面端は「弾が少ない」が「逃げ道も無い」ため
+// 通行量だけで選ぶとAIが壁際に誘導されて追い詰められるから(実測で発生した誘導事故)
+function demoSafeSpot(){
+  const CX=8, CY=5, x0=110, x1=W-110;
+  const yTop = boss ? boss.y+80 : 160;
+  // ルートが demoBeltY(boss) を定義していると、候補帯をその高度±90pxに寄せる。
+  // 回転弾幕(洗濯機)はアームの横薙ぎ速度が半径に比例するため、外周(床付近)は
+  // 自機の最高速を超える即死地帯になる。通行量カウントは「外周=通過が速い=空いている」と
+  // 誤読するので、パターンを知っているルート側から適正高度を教えてもらう
+  const hint = curRoute().demoBeltY;
+  const beltC = (hint && boss) ? clamp(hint(boss), 160, H-DEMO_FLOOR_MARGIN-40) : null;
+  const y0 = beltC ? Math.max(yTop, beltC-90) : Math.max(yTop, H*0.4);
+  const y1 = beltC ? Math.min(H-DEMO_FLOOR_MARGIN-8, beltC+90) : H-DEMO_FLOOR_MARGIN-8;
+  const cw=(x1-x0)/CX, ch=(y1-y0)/CY;
+  const score=new Float64Array(CX*CY);
+  for(const b of eBullets){
+    for(let t=0;t<=150;t+=6){
+      const ci=Math.floor((b.x+b.vx*t-x0)/cw), cj=Math.floor((b.y+b.vy*t-y0)/ch);
+      if(ci>=0&&ci<CX&&cj>=0&&cj<CY) score[cj*CX+ci] += 1/(1+t*0.04); // 近い将来ほど重い
+    }
+  }
+  // 現在位置から遠いセルは移動コストぶん割引き、左右端寄りほど僅かに嫌う
+  let bi=0, bs=Infinity;
+  for(let j=0;j<CY;j++)for(let i=0;i<CX;i++){
+    const cx=x0+(i+0.5)*cw, cy=y0+(j+0.5)*ch;
+    const s=score[j*CX+i] + Math.hypot(cx-player.x,cy-player.y)*0.006 + Math.abs(cx-W/2)*0.06;
+    if(s<bs){bs=s; bi=j*CX+i;}
+  }
+  return {x:x0+((bi%CX)+0.5)*cw, y:y0+(Math.floor(bi/CX)+0.5)*ch};
+}
+// 使い回しバッファ: 探索は毎フレーム数十万要素を扱うため、Mapや都度newの配列では
+// アロケーションとGCで実機がカクつく。typed arrayをモジュールレベルで保持し伸長のみ行う
+const DD = { posCap:0, bulCap:0, cellCap:0, seenGen:1, stCap:2048 };
 function demoDodge(){
-  const sp = player.slowSpeed;
-  const homeX = boss ? boss.x : W/2, homeY = H-110;
-  let best={dx:0,dy:0}, bestScore=-Infinity;
-  for(let mx=-1;mx<=1;mx++)for(let my=-1;my<=1;my++){
-    let danger=0;
-    for(const b of eBullets){
-      for(let k=4;k<=28;k+=8){
-        const bx=b.x+b.vx*k, by=b.y+b.vy*k;
-        const px=clamp(player.x+mx*sp*k,12,W-12), py=clamp(player.y+my*sp*k,12,H-12);
-        const d2=(bx-px)**2+(by-py)**2;
-        const rr=(b.r+player.r+7)*3;
-        if(d2<rr*rr) danger += rr*rr/(d2+1);
+  // 再探索の間引き: 余裕がある間はDEMO_REPLANフレームに1回だけ全探索し、間は直前の
+  // 一手を継続する(マージン1.5pxが1フレーム分の継続誤差を吸収する)
+  if(demoDodge.hold>0){ demoDodge.hold--; return demoDodge.cached; }
+  const px0=player.x, py0=player.y;
+  const inv=player.invul; // 残り無敵フレーム: この間は当たらないので「弾を突っ切って再配置」も許す
+  const FLOOR=H-DEMO_FLOOR_MARGIN;
+  // ボス接近上限: お仕置き圏(ボスの高さ付近より上)の手前で止める。至近距離だと自機狙いの
+  // 高速アクセント弾への反応猶予が数フレームしかなく、横をアームに塞がれた瞬間に詰むため、
+  // 猶予が2倍とれる距離(+100px)までしか近寄らない
+  const yMin = boss ? Math.min(boss.y+100, FLOOR-120) : 120;
+  // 先読み範囲に影響し得る弾だけに絞る(自機の可動域+弾の移動量+判定半径)
+  const reach = player.speed*DEMO_T + 48;
+  const bs=[];
+  for(const b of eBullets){
+    const dx=b.x-px0, dy=b.y-py0;
+    const br = Math.hypot(b.vx,b.vy)*DEMO_T + b.r + reach;
+    if(dx*dx+dy*dy < br*br) bs.push(b);
+  }
+  const n=bs.length, S=DEMO_T+1, GC=32;
+  const gx0=Math.floor((px0-reach)/GC), gy0=Math.floor((py0-reach)/GC);
+  const gw=Math.ceil(reach*2/GC)+2, gh=gw, CELLS=gw*gh, TC=S*CELLS;
+  // バッファ確保(不足時のみ伸長。新規確保はゼロ初期化済み、再利用時は使う範囲だけゼロ埋め)
+  if(n*S>DD.posCap){ DD.posCap=Math.ceil(n*S*1.4)+1024;
+    DD.bx=new Float64Array(DD.posCap); DD.by=new Float64Array(DD.posCap);
+    DD.cellOf=new Int32Array(DD.posCap); DD.idx=new Int32Array(DD.posCap); }
+  if(n>DD.bulCap){ DD.bulCap=n+64; DD.rr=new Float64Array(DD.bulCap); }
+  if(TC+1>DD.cellCap){ DD.cellCap=Math.ceil((TC+1)*1.4);
+    DD.cnt=new Int32Array(DD.cellCap); DD.off=new Int32Array(DD.cellCap+1); }
+  else DD.cnt.fill(0,0,TC);
+  if(!DD.ax){
+    DD.ax=new Float64Array(DD.stCap); DD.ay=new Float64Array(DD.stCap);
+    DD.ac=new Float64Array(DD.stCap); DD.af=new Int32Array(DD.stCap);
+    DD.nx=new Float64Array(DD.stCap); DD.ny=new Float64Array(DD.stCap);
+    DD.nc=new Float64Array(DD.stCap); DD.nf=new Int32Array(DD.stCap);
+    DD.seenStamp=new Int32Array(32768); DD.seenSlot=new Int32Array(32768); // 4px格子: (x>>2)*161+(y>>2) < 19481
+    DD.seen16=new Int32Array(2048);                                        // 16px粗格子: (x>>4)*41+(y>>4) < 1271
+    DD.ord=[];
+  }
+  const {bx,by,cellOf,idx,rr,cnt,off}=DD;
+  // pass1: 全弾のt=0..Tの位置とセルを前計算し、セル別に数える
+  for(let i=0;i<n;i++){
+    const b=bs[i]; rr[i]=b.r+player.r+DEMO_MARGIN;
+    let x=b.x, y=b.y;
+    const base=i*S;
+    for(let t=0;t<S;t++){
+      bx[base+t]=x; by[base+t]=y;
+      const ci=Math.floor(x/GC)-gx0, cj=Math.floor(y/GC)-gy0;
+      if(ci>=0&&ci<gw&&cj>=0&&cj<gh){ const c=t*CELLS+cj*gw+ci; cellOf[base+t]=c; cnt[c]++; }
+      else cellOf[base+t]=-1;
+      x+=b.vx; y+=b.vy;
+    }
+  }
+  // pass2: 接頭和 → pass3: 逆引き表(cntを書き込みカーソルとして再利用)
+  off[0]=0;
+  for(let c=0;c<TC;c++) off[c+1]=off[c]+cnt[c];
+  for(let c=0;c<TC;c++) cnt[c]=off[c];
+  for(let p=0;p<n*S;p++){ const c=cellOf[p]; if(c>=0) idx[cnt[c]++]=(p/S)|0; }
+  const safe = demoSafeSpot();
+  const homeX = boss ? boss.x : W/2;
+  // ルートが推奨滞空高度(demoBeltY)を定義している場合、それより大きく下に降りる経路を
+  // 終端採点で強く抑止する(回転弾幕の外周=床付近はアームの横薙ぎが自機より速い死地)
+  const beltHint = curRoute().demoBeltY;
+  const beltC = (beltHint && boss) ? clamp(beltHint(boss), 160, FLOOR-40) : null;
+  // ビームサーチ: 状態=(位置, 経路中の最小クリアランス, 最初の一手)。毎フレーム17行動で
+  // 分岐し、4px格子で重複排除して上位DEMO_BEAM件だけ残す。生存が最優先(死ぬ枝は捨てる)
+  let aN=1; DD.ax[0]=px0; DD.ay[0]=py0; DD.ac[0]=1e9; DD.af[0]=-1;
+  let emgSurv=-1, emgFirst=0;
+  const stamp=DD.seenStamp, slot=DD.seenSlot;
+  for(let t=1;t<=DEMO_T;t++){
+    const gen=++DD.seenGen;
+    let bN=0;
+    for(let si=0;si<aN;si++){
+      const sx=DD.ax[si], sy=DD.ay[si], sc=DD.ac[si], sf=DD.af[si];
+      for(let ai=0;ai<DEMO_ACTS.length;ai++){
+        const a=DEMO_ACTS[ai];
+        const sp=(a.fast?player.speed:player.slowSpeed)*((a.x&&a.y)?0.7071:1);
+        let x=sx+a.x*sp; if(x<12)x=12; else if(x>W-12)x=W-12;
+        let y=sy+a.y*sp; if(y<12)y=12; else if(y>FLOOR)y=FLOOR;
+        if(y<yMin) continue;
+        const first = sf<0 ? ai : sf;
+        // 壁(左右・仮想フロア)との距離もクリアランスに含める(壁際は逃げ道が半減する)
+        let clear=sc;
+        const wall=Math.min(x-14, W-14-x, FLOOR+12-y);
+        if(wall<clear)clear=wall;
+        let dead=false;
+        // 無敵中(t<inv)は当たっても死なないため衝突は無視してよいが、弾との距離は
+        // 常に採点する(無視すると無敵中に弾の密集地へ入り込み、切れた瞬間に囲まれる)
+        const ci=Math.floor(x/GC)-gx0, cj=Math.floor(y/GC)-gy0;
+        for(let j2=cj-1;j2<=cj+1&&!dead;j2++){
+          if(j2<0||j2>=gh)continue;
+          const rowBase=t*CELLS+j2*gw;
+          for(let i2=ci-1;i2<=ci+1&&!dead;i2++){
+            if(i2<0||i2>=gw)continue;
+            const c=rowBase+i2;
+            for(let k=off[c];k<off[c+1];k++){
+              const bi=idx[k], p=bi*S+t;
+              const dx=bx[p]-x, dy=by[p]-y;
+              const d2=dx*dx+dy*dy, r=rr[bi];
+              if(d2<r*r){
+                if(t>=inv){ dead=true; break; }
+                const d=Math.sqrt(d2)-r; if(d<clear)clear=d; // 無敵中の被り: 死なないが最低評価
+                continue;
+              }
+              const near=r+24;
+              if(d2<near*near){ const d=Math.sqrt(d2)-r; if(d<clear)clear=d; }
+            }
+          }
+        }
+        if(dead){ if(t-1>emgSurv){emgSurv=t-1; emgFirst=first;} continue; }
+        const key=(Math.round(x)>>2)*161+(Math.round(y)>>2);
+        if(stamp[key]===gen){
+          const s2=slot[key];
+          if(clear>DD.nc[s2]){ DD.nx[s2]=x; DD.ny[s2]=y; DD.nc[s2]=clear; DD.nf[s2]=first; }
+        }else{
+          stamp[key]=gen; slot[key]=bN;
+          DD.nx[bN]=x; DD.ny[bN]=y; DD.nc[bN]=clear; DD.nf[bN]=first; bN++;
+        }
       }
     }
-    const nx=clamp(player.x+mx*sp*10,12,W-12), ny=clamp(player.y+my*sp*10,12,H-12);
-    let score = -danger
-      - ((nx-homeX)**2)*0.00005 - ((ny-homeY)**2)*0.00008; // ホームへの弱い引力
-    if(nx<36||nx>W-36||ny>H-28||ny<H*0.45) score -= 0.6;     // 壁ぎわ・上半分は避ける
-    if(score>bestScore){ bestScore=score; best={dx:mx,dy:my}; }
+    if(bN===0){
+      demoDodge.dbg={mode:"emergency", surv:emgSurv}; // 全経路死亡: 最長生存の一手(診断用)
+      const a=DEMO_ACTS[emgFirst];
+      demoDodge.cached={dx:a.x,dy:a.y,fast:a.fast}; demoDodge.hold=0; // 緊急時は毎フレーム再探索
+      return demoDodge.cached;
+    }
+    // 次世代を確定。あふれた場合は空間的に散らして残す: 16px粗格子ごとに最良1件を優先確保し、
+    // 残り枠を評価順で埋める(評価順だけで刈ると候補が一つの袋小路に固まり、別方向にある
+    // 安全地帯(特に無敵中の長距離再配置先)を探索から失う)
+    if(bN>DEMO_BEAM){
+      const ord=DD.ord; ord.length=bN;
+      for(let i2=0;i2<bN;i2++) ord[i2]=i2;
+      ord.sort((p,q)=>DD.nc[q]-DD.nc[p]);
+      const gen16=++DD.seenGen, seen16=DD.seen16;
+      let w=0;
+      for(const oi of ord){                        // 粗格子ごとの最良を先に
+        if(w>=DEMO_BEAM) break;
+        const k16=(Math.round(DD.nx[oi])>>4)*41+(Math.round(DD.ny[oi])>>4);
+        if(seen16[k16]===gen16) continue;
+        seen16[k16]=gen16;
+        DD.ax[w]=DD.nx[oi]; DD.ay[w]=DD.ny[oi]; DD.ac[w]=DD.nc[oi]; DD.af[w]=DD.nf[oi]; w++;
+        DD.nc[oi]=-1e18;                           // 選抜済みマーク
+      }
+      for(const oi of ord){                        // 残り枠を評価順で
+        if(w>=DEMO_BEAM) break;
+        if(DD.nc[oi]===-1e18) continue;
+        DD.ax[w]=DD.nx[oi]; DD.ay[w]=DD.ny[oi]; DD.ac[w]=DD.nc[oi]; DD.af[w]=DD.nf[oi]; w++;
+      }
+      aN=w;
+    }else{
+      for(let i2=0;i2<bN;i2++){ DD.ax[i2]=DD.nx[i2]; DD.ay[i2]=DD.ny[i2]; DD.ac[i2]=DD.nc[i2]; DD.af[i2]=DD.nf[i2]; }
+      aN=bN;
+    }
   }
-  return best;
+  // 完走した経路の中から、到達点の良さ(余裕 > 安全セルへの近さ > ボス直下=射線維持)で選ぶ
+  let bi=-1, bk=-Infinity, bClear=0;
+  for(let si=0;si<aN;si++){
+    const x=DD.ax[si], y=DD.ay[si], c=DD.ac[si];
+    let k = Math.min(c,40)*40
+      - ((x-safe.x)**2)*0.04 - ((y-safe.y)**2)*0.03
+      - ((x-homeX)**2)*0.0008;
+    // 画面端の縦帯は「今は弾が来ない風下の影」でも、ボスの移動で影が消えると壁2面に
+    // 挟まれた即詰みの箱になる(実測: 全死が左下隅)。端に立つ選択自体を強く抑止する
+    if(x<100) k -= 3000 + (100-x)*120;
+    if(x>W-100) k -= 3000 + (x-(W-100))*120;
+    if(beltC!==null && y > beltC+110) k -= (y-(beltC+110))*40;
+    if(k>bk){bk=k; bi=si; bClear=c;}
+  }
+  demoDodge.dbg={mode:"ok", beamN:aN, clear:+bClear.toFixed(1)};
+  const a=DEMO_ACTS[DD.af[bi]<0 ? 0 : DD.af[bi]];
+  demoDodge.cached={dx:a.x, dy:a.y, fast:a.fast};
+  // 余裕がある時だけ再探索を間引く。弾との余裕が小さい(=精密な糸通し中)は毎フレーム
+  // 再探索して品質を保つ
+  demoDodge.hold = bClear < 12 ? 0 : DEMO_REPLAN-1;
+  return demoDodge.cached;
 }
 
 function playerHit(){
-  if(game.demo) return; // デモのASIは被弾しない(全て避け切る)
+  // ASIデモにも無敵チートは無い: 回避AIが避け損ねれば普通に被弾・残機減する
   if(player.invul>0||player.bombTime>0||!player.alive) return;
   seHit();
   player.alive=false; player.respawn=60;
@@ -888,6 +1128,12 @@ function playerHit(){
   // 弾を少し消して救済
   eBullets = eBullets.filter(b=>((b.x-player.x)**2+(b.y-player.y)**2)>150*150);
   if(player.lives<0){
+    if(game.demo){
+      // ASIデモが力尽きた場合はゲームオーバー会話にせず、少し置いて最初からリプレイ
+      player.lives=0; player.respawn=99999;
+      setTimeout(()=>{ if(game.demo && game.state==="play") startDemo(); }, 900);
+      return;
+    }
     player.lives=0; player.respawn=99999; // ゲームオーバー会話中は復活させない
     game.overPending=true; // ボス撃破タイミングと重なってもボス撃破会話に上書きされないようにする
     setTimeout(()=>{ if(game.state==="play") startDialogueOver(); }, 900);
@@ -970,7 +1216,7 @@ function update(){
       boss.dmgMult = enemies.some(e=>e.summonTag) ? 0.12 : 1; // 召喚キャラが生きている間はダメージが通りにくい
       // シナリオが bossBarrierOnInvul を立てていると、自機の無敵時間中(ボム含む)は
       // ボスがバリアを貼って自機の攻撃を完全に無効化する(シナリオ4の仕様)
-      boss.barrier = !!(curScenario().bossBarrierOnInvul && (player.invul>0 || player.bombTime>0));
+      boss.barrier = !!(curRoute().bossBarrierOnInvul && (player.invul>0 || player.bombTime>0));
       if(boss.barrier) boss.dmgMult = 0;
       for(const b of pBullets){
         if(b.hit)continue;
@@ -1119,7 +1365,7 @@ function drawPlayer(){
   const x=player.x,y=player.y;
   // 神北うらら(後ろ姿ドット): 移動方向で少し傾いた差分スプライットに切替。
   // ASIデモプレイ中はシナリオが demoPlayerSprite を定義していればそちらを使う(例: シナリオ4は棗みその後ろ姿)
-  const demoSpr = game.demo && curScenario().demoPlayerSprite;
+  const demoSpr = game.demo && curRoute().demoPlayerSprite;
   const spr = demoSpr ? demoSpr(player.dir)
     : player.dir<0 ? IMG.URARA_SPRITE_LEFT : player.dir>0 ? IMG.URARA_SPRITE_RIGHT : IMG.URARA_SPRITE;
   if(spr.complete && spr.naturalWidth){
@@ -1142,14 +1388,6 @@ function drawPlayer(){
       drawPhone(x+ox, y+oy, s);
     }
   }
-  // 低速時: 回転スクエア(当たり判定ドット本体は drawHitboxMarker が敵弾より上に常時描画)
-  if(keys["Shift"] || game.demo){
-    ctx.save();
-    ctx.translate(Math.round(x),Math.round(y)); ctx.rotate(game.frame*0.04);
-    ctx.strokeStyle="rgba(200,180,255,0.7)";
-    ctx.strokeRect(-9,-9,18,18);
-    ctx.restore();
-  }
   // ボムエフェクト
   if(player.bombTime>0){
     const pr=(120-player.bombTime)/120*520;
@@ -1160,17 +1398,31 @@ function drawPlayer(){
   }
 }
 
-// 当たり判定マーカー(白の菱形フチ+赤コア点滅): 判定円(player.r=3)と同サイズの6pxドット。
-// 弾幕に埋もれても自機の判定位置が見えるよう、敵弾レイヤーより上に常時描画する
-function drawHitboxMarker(){
-  if(!player.alive) return;
-  const px=Math.round(player.x)-3, py=Math.round(player.y)-3;
+// 自機の当たり判定マーカー。実際の判定(player.r=1.5 → 直径3px)と同じ大きさの緑コアを
+// 「小さい玉」として自機の中心に描く。緑は自機(金髪・暖色系)とも敵弾(紫/赤/青/桃)とも
+// 被らない専用色。大玉弾幕で自機が敵弾に埋もれても位置と判定を見失わないよう、
+// render()で敵弾より後(=常に上のレイヤー)に描画する
+function drawPlayerHitbox(){
+  if(game.state!=="play" || !player.alive) return;
+  const x=player.x, y=player.y;
+  // 低速時(デモ中は常時低速)は回転する枠を追加して低速状態を強調
+  if(keys["Shift"] || game.demo){
+    ctx.save();
+    ctx.translate(Math.round(x),Math.round(y)); ctx.rotate(game.frame*0.04);
+    ctx.strokeStyle="rgba(120,255,180,0.7)";
+    ctx.strokeRect(-9,-9,18,18);
+    ctx.restore();
+  }
+  // 暗色フチ(7px角丸)→白リング(5px角丸)→緑コア(3px=当たり判定と同径、点滅)の三層。
+  // 暗色フチのおかげで明るい弾・自機スプライトのどちらの上でも輪郭が立つ
+  const px=Math.round(x)-3, py=Math.round(y)-3;
   ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle="#04121e";
+  ctx.fillRect(px+1,py,5,7); ctx.fillRect(px,py+1,7,5);
   ctx.fillStyle="#ffffff";
-  ctx.fillRect(px+2,py,2,2);   ctx.fillRect(px+2,py+4,2,2);
-  ctx.fillRect(px,py+2,2,2);   ctx.fillRect(px+4,py+2,2,2);
-  ctx.fillStyle=Math.floor(game.frame/8)%2===0?"#ff2a4a":"#ff8aa0";
-  ctx.fillRect(px+2,py+2,2,2);
+  ctx.fillRect(px+2,py+1,3,5); ctx.fillRect(px+1,py+2,5,3);
+  ctx.fillStyle=Math.floor(game.frame/8)%2===0?"#2aff6e":"#b0ffd0"; // 緑コア点滅
+  ctx.fillRect(px+2,py+2,3,3);
   ctx.imageSmoothingEnabled=true;
 }
 
@@ -1231,7 +1483,7 @@ function drawBoss(){
     ctx.restore(); ctx.globalAlpha=1;
   }
   // 体(ドット絵スプライト: ふわふわ上下、移動方向で傾き差分に切替)
-  const bSpr = curScenario().boss.sprite(b);
+  const bSpr = curRoute().boss.sprite(b);
   if(bSpr.complete && bSpr.naturalWidth){
     const scale=1, sw=bSpr.naturalWidth*scale, sh=bSpr.naturalHeight*scale;
     const bob=Math.sin(game.frame*0.07)*4;
@@ -1482,6 +1734,32 @@ function drawOverlay(){
     ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
     if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで戻る":"Z キーで戻る", W/2, H-22);
   }
+  else if(game.state==="route"){
+    const chips = routeChips();
+    const listTop = chips[0].y, listBottom = chips[chips.length-1].y+chips[0].h;
+    ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
+    ctx.fillText(curScenario().name+" - ルート選択",W/2,listTop-30);
+    for(const c of chips){
+      // キーボードでカーソルが当たっている項目は金色で強調表示する
+      const active = c.i===game.route;
+      ctx.fillStyle = active ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.14)";
+      ctx.fillRect(c.x,c.y,c.w,c.h);
+      ctx.strokeStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.lineWidth = active?2:1;
+      ctx.strokeRect(c.x,c.y,c.w,c.h);
+      ctx.lineWidth = 1;
+      ctx.fillStyle = active ? "#ffd76e" : "#e8e2f5"; ctx.font = "bold 17px serif";
+      ctx.fillText(c.r.name, c.x+c.w/2, c.r.sub ? c.y+28 : c.y+38);
+      if(c.r.sub){
+        ctx.fillStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.font = "11px monospace";
+        ctx.fillText("- "+c.r.sub+" -", c.x+c.w/2, c.y+48);
+      }
+    }
+    ctx.lineWidth=1;
+    ctx.fillStyle="#6f639b"; ctx.font="10px sans-serif";
+    if(!IS_TOUCH) ctx.fillText("↑ ↓ で選択",W/2,listBottom+22);
+    ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで決定":"Z キーで決定",W/2,listBottom+(IS_TOUCH?26:46));
+  }
   else if(game.state==="difficulty"){
     const chips = diffChips(); // シナリオ専用の難易度(diffOptions)があればそちらを表示
     const listTop = chips[0].y, listBottom = chips[chips.length-1].y+chips[0].h;
@@ -1495,10 +1773,15 @@ function drawOverlay(){
       ctx.strokeStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.lineWidth = active?2:1;
       ctx.strokeRect(c.x,c.y,c.w,c.h);
       ctx.lineWidth = 1;
+      // シナリオ専用diffOptionsがsubを省略している場合は、エンジン標準のフレーバーテキストに
+      // フォールバックせずサブタイトルなし(タイトルのみ)として扱う
+      const sub = diffOptions() ? c.sub : (c.sub ?? DIFF_SUBTITLE[c.i]);
       ctx.fillStyle = active ? "#ffd76e" : "#e8e2f5"; ctx.font = "bold 15px monospace";
-      ctx.fillText(c.name, c.x+c.w/2, c.y+24);
-      ctx.fillStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.font = "11px sans-serif";
-      ctx.fillText("「"+(c.sub ?? DIFF_SUBTITLE[c.i])+"」", c.x+c.w/2, c.y+42);
+      ctx.fillText(c.name, c.x+c.w/2, sub ? c.y+24 : c.y+32);
+      if(sub){
+        ctx.fillStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.font = "11px sans-serif";
+        ctx.fillText("「"+sub+"」", c.x+c.w/2, c.y+42);
+      }
     }
     // デモプレイボタン(難易度カードとは別デザイン: 黒地+金の二重枠。↓でフォーカス/タップで即開始)
     const dc = demoChip();
@@ -1510,7 +1793,7 @@ function drawOverlay(){
       ctx.strokeRect(dc.x,dc.y,dc.w,dc.h);
       ctx.strokeRect(dc.x+3,dc.y+3,dc.w-6,dc.h-6);
       ctx.fillStyle="#ffd76e"; ctx.font="bold 14px monospace";
-      ctx.fillText("▶ "+SCENARIOS[game.scenario].demoLabel, dc.x+dc.w/2, dc.y+25);
+      ctx.fillText("▶ "+curRoute().demoLabel, dc.x+dc.w/2, dc.y+25);
       ctx.lineWidth=1;
     }
     const hintBase = dc ? dc.y+dc.h : listBottom;
@@ -1671,7 +1954,7 @@ function drawDialog(){
   }else{
     // 話者を後に描いて手前に出す。ボス立ち絵の画像/配置はシナリオ定義から取得
     // (bd.solo=ボス単独でうららを出さない / bd.center=ボス立ち絵を画面中央に配置)
-    const bd = curScenario().boss.dialog(game.dialog.set);
+    const bd = curRoute().boss.dialog(game.dialog.set);
     const ports = [
       [bd.img, bd.center?"center":false, !uraraTurn, bd.scale, bd.margin, bd.bottom],
     ];
@@ -1758,7 +2041,7 @@ function drawDemoHud(){
 // デモ撃破後の画面: みそのの立ち絵+セリフ(入力待ちなし)→10秒後にリプレイ告知
 function drawDemoEnd(){
   const de = game.demoEnd; if(!de) return;
-  const sc = curScenario();
+  const sc = curRoute();
   const bd = sc.boss.dialog("pre");
   const img = bd.img;
   if(img.complete && img.naturalWidth){
@@ -1799,7 +2082,7 @@ function render(){
   drawBoss();
   drawPlayer();
   drawEnemyBullets();
-  drawHitboxMarker(); // 敵弾より上のレイヤーに描く(弾幕の中でも判定位置を見失わないように)
+  drawPlayerHitbox(); // 敵弾より上のレイヤー(大玉弾幕に埋もれても判定位置が見える)
   drawEffects();
   drawBanner();
   drawCutIn();
