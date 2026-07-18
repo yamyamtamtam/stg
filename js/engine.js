@@ -676,6 +676,11 @@ function startDialogue(){
   game.dialog = {idx:0, set:"pre"};
   eBullets.length=0; pBullets.length=0;
 }
+// ステージ開始時のうららのぼやき(シナリオ定義に dialogIntro があるときだけ)。
+// 閉じるとそのまま道中が始まる
+function startDialogueIntro(){
+  game.dialog = {idx:0, set:"intro"};
+}
 function startDialogueAfter(){
   game.dialog = {idx:0, set:"post"};
   eBullets.length=0; pBullets.length=0;
@@ -687,6 +692,7 @@ function startDialogueOver(){
 function dialogList(){
   if(game.dialog.set==="post") return curRoute().dialogPost;
   if(game.dialog.set==="over") return DIALOG_OVER;
+  if(game.dialog.set==="intro") return curRoute().dialogIntro;
   return curRoute().dialogPre;
 }
 function advanceDialog(){
@@ -698,6 +704,7 @@ function advanceDialog(){
     game.dialog=null;
     if(set==="post"){ if(game.state==="play"){ game.state="clear"; game.endSel=0; } }
     else if(set==="over"){ game.state="over"; game.endSel=0; }
+    else if(set==="intro"){ /* ぼやき終了→そのまま道中開始 */ }
     else spawnBoss();
   }
 }
@@ -865,6 +872,7 @@ function startDemo(){
   startGame();
   game.demo = true;
   timeline=[]; tlIndex=0;   // 会話・道中なしで即ボス戦
+  game.dialog=null;         // ぼやき(dialogIntro)もスキップ
   game.banner=null;
   player.power=4;
   player.invul=0;           // ASIは被弾しないので開幕無敵は不要(バリア誤発動も防ぐ)
@@ -1920,9 +1928,10 @@ function drawBanner(){
 function drawDialog(){
   if(!game.dialog) return;
   const isOver = game.dialog.set==="over";
+  const isIntro = game.dialog.set==="intro";
   const list = dialogList();
   const d = list[game.dialog.idx];
-  const uraraTurn = d.who==="うらら";
+  const uraraTurn = d.who.includes("うらら");
   const drawP=(img,pos,active,scale,margin,bottom)=>{
     // pos: true=左寄せ / false=右寄せ / "center"=中央配置
     if(!(img.complete&&img.naturalWidth)) return;
@@ -1940,6 +1949,9 @@ function drawDialog(){
       const scale=1.05, pw=IMG.URARA_CRY_PORTRAIT.naturalWidth*scale, ph=IMG.URARA_CRY_PORTRAIT.naturalHeight*scale;
       ctx.drawImage(IMG.URARA_CRY_PORTRAIT, (W-pw)/2, H-ph-118, pw, ph);
     }
+  }else if(isIntro){
+    // ステージ開始時のぼやき: うらら単独(通常の会話と同じ左配置)。ボス立ち絵は出さない
+    drawP(IMG.URARA_PORTRAIT, true, true, 0.85, 8, 108);
   }else{
     // 話者を後に描いて手前に出す。ボス立ち絵の画像/配置はシナリオ定義から取得
     // (bd.solo=ボス単独でうららを出さない / bd.center=ボス立ち絵を画面中央に配置)
@@ -1964,6 +1976,7 @@ function drawDialog(){
   const maxW=bw-28;
   const lines=[]; let line="";
   for(const ch of d.text){
+    if(ch==="\n"){ lines.push(line); line=""; continue; } // 明示的な改行に対応
     if(ctx.measureText(line+ch).width>maxW){ lines.push(line); line=ch; }
     else line+=ch;
   }
@@ -2099,6 +2112,7 @@ function startGame(){
   bgBossFade=0;
   game.banner={t:0, dur:210};
   buildStage();
+  if(curRoute().dialogIntro) startDialogueIntro(); // うららのぼやき(タップ/Zで道中開始)
 }
 function togglePause(){
   if(game.state==="play") game.paused=!game.paused;

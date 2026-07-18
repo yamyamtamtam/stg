@@ -286,6 +286,9 @@ const spells = [
 registerScenario({
   name:"オンラインサロンの宗教", sub:"再現性の疑問",
   bgTheme:"salon",
+  dialogIntro: [
+    {who:"神北うらら", text:"サブスク代金もAPI代金も結構キツいよ〜\nネットでお金稼げればいいんだけど…"},
+  ],
   buildStage,
   dialogPre: DIALOG_PRE,
   dialogPost: DIALOG_POST,

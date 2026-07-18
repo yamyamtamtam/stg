@@ -188,6 +188,9 @@ const spells = [
 registerScenario({
   name:"オタサーの森", sub:"貢ぎ物募集中",
   bgTheme:"forest",
+  dialogIntro: [
+    {who:"神北うらら", text:"(…たまにはちやほやされたいな。たまにはね。)"},
+  ],
   buildStage,
   dialogPre: DIALOG_PRE,
   dialogPost: DIALOG_POST,

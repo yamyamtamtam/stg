@@ -151,6 +151,9 @@ const spells = [
 registerScenario({
   name:"ホモガキミームの海", sub:"114514 connect.",
   bgTheme:"sea",
+  dialogIntro: [
+    {who:"神北うらら", text:"人権とか権利とか、分かってるけど遊ぶと楽しいよね〜〜"},
+  ],
   buildStage,
   dialogPre: DIALOG_PRE,
   dialogPost: DIALOG_POST,

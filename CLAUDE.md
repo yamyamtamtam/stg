@@ -61,6 +61,8 @@ CSSは `css/style.css`。全ファイルのトップレベル `const/let` はグ
                                    // (game.diffがそのindexになる)
      buildStage(),                 // at()でタイムライン構築。最後に at(2150, startDialogue)
      dialogPre, dialogPost,        // [{who, text}, ...]
+     dialogIntro,                  // 任意: ステージ開始時のうららのぼやき(単独立ち絵。閉じると道中開始。
+                                   // テキストは"\n"で明示改行できる。デモプレイではスキップ)
      boss: {
        name,
        spells,                     // [{name, hp, time, spell, fire(b), onStart?, checkAdvance?}]
