@@ -1249,14 +1249,16 @@ function update(){
 
     if(player.alive && player.invul<=0){
       const d2=(b.x-player.x)**2+(b.y-player.y)**2;
+      // 被弾判定は見た目(b.r)より微妙に小さい85%(プレイヤー有利)。グレイズ範囲は見た目のまま
+      const hit2=(player.r+b.r*0.85)**2;
       // グレイズ
-      if(!b.grazed && d2 < (player.grazeR+b.r)**2 && d2 > (player.r+b.r)**2){
+      if(!b.grazed && d2 < (player.grazeR+b.r)**2 && d2 > hit2){
         b.grazed=true; game.graze=(game.graze||0)+1; addScore(50);
         burst(player.x,player.y,"#ffffff",2,2);
         if(grazeSoundFrame!==game.frame){ grazeSoundFrame=game.frame; seGraze(); }
       }
       // 被弾
-      if(d2 < (player.r+b.r)**2){ playerHit(); }
+      if(d2 < hit2){ playerHit(); }
     }
   }
   eBullets=eBullets.filter(b=>b.x>-30&&b.x<W+30&&b.y>-30&&b.y<H+30);
@@ -1304,7 +1306,212 @@ function update(){
 //======================================================================
 // 描画
 //======================================================================
+//======================================================================
+// シナリオ別ピクセルアート背景(シナリオ定義の bgTheme で有効化。プレイ中のみ)
+// レイヤーは初回に1度だけオフスクリーンへプリレンダし、毎フレームは
+// drawImage数回+十数ドットの点描アニメだけに抑える(重くしない)。
+// 全体を暗色に抑え、最後に霧で一段沈めて弾の視認性を守る。
+// ボス出現中はシナリオ固有のボス背景へクロスフェードする。
+//======================================================================
+const BG_P = 4; // ドット絵の1ピクセル(実4x4px)
+function bgRng(seed){ let s=seed>>>0; return ()=>((s=(s*1103515245+12345)>>>0)/4294967296); }
+function bgLayer(draw){ const c=document.createElement("canvas"); c.width=W; c.height=H; draw(c.getContext("2d")); return c; }
+// 縦スクロールでタイルするレイヤー用: yをHで折り返して打点(上下端をまたぐ分は2回描く)
+function bgDot(g,x,y,w,h){ y=((y%H)+H)%H; g.fillRect(x,y,w,h); if(y+h>H) g.fillRect(x,y-H,w,h); }
+// グリッドに吸着したランダム散布(seedで再現可能)
+function bgScatter(g,seed,n,colors,wMax=1,hMax=1){
+  const r=bgRng(seed);
+  for(let i=0;i<n;i++){
+    const x=((r()*W/BG_P)|0)*BG_P, y=((r()*H/BG_P)|0)*BG_P;
+    g.fillStyle=colors[(r()*colors.length)|0];
+    bgDot(g,x,y,BG_P*(1+(r()*wMax|0)),BG_P*(1+(r()*hMax|0)));
+  }
+}
+const bgSnap=v=>Math.floor(v/BG_P)*BG_P;
+
+const BG_BUILDERS = {
+  //--- ホモガキミームの海: 深海。遠景=海淵の暗い塊+プランクトン / 近景=水流 / ボス=大渦
+  sea(){
+    const grad=ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,"#082038"); grad.addColorStop(0.6,"#051828"); grad.addColorStop(1,"#030e1c");
+    const far=bgLayer(g=>{
+      bgScatter(g,11,70,["rgba(12,40,64,0.6)","rgba(16,48,72,0.5)","rgba(8,30,52,0.65)"],6,3);
+      bgScatter(g,12,90,["rgba(100,165,195,0.20)","rgba(130,190,215,0.14)"]);
+    });
+    const near=bgLayer(g=>{
+      bgScatter(g,21,40,["rgba(40,100,135,0.35)","rgba(32,80,115,0.40)"],1,4); // 縦の水流
+      bgScatter(g,22,24,["rgba(160,215,240,0.26)"]);                            // 小さな泡
+    });
+    const bossArt=bgLayer(g=>{
+      // 大渦: 同心のドットリング(僅かに螺旋)+中心の淵
+      const cx=W/2, cy=225;
+      for(let ring=0;ring<11;ring++){
+        const rad=42+ring*15, n=(rad*0.55)|0;
+        g.fillStyle= ring%2 ? "rgba(46,96,142,0.30)" : "rgba(14,40,70,0.42)";
+        for(let k=0;k<n;k++){
+          const a=k/n*TAU+ring*0.6;
+          g.fillRect(bgSnap(cx+Math.cos(a)*rad),bgSnap(cy+Math.sin(a)*rad*0.9),BG_P,BG_P);
+        }
+      }
+      g.fillStyle="rgba(1,4,10,0.85)"; g.beginPath(); g.arc(cx,cy,42,0,TAU); g.fill();
+    });
+    return { base:g=>{g.fillStyle=grad;g.fillRect(0,0,W,H);}, far, near,
+      bossTint:"rgba(2,10,20,0.72)", bossArt,
+      anim(){ // 立ち上る泡
+        for(let i=0;i<12;i++){
+          const sp=0.5+(i%3)*0.35, x=((i*167)%120)*BG_P;
+          const y=H-((game.frame*sp+i*211)%(H+40))-20;
+          ctx.fillStyle="rgba(170,220,240,0.20)";
+          ctx.fillRect(x,bgSnap(y),BG_P,BG_P);
+        }
+      } };
+  },
+  //--- オタサーの森: 暗い木立。遠景=幹+梢 / 近景=葉群 / アニメ=蛍 / ボス=姫の薔薇園
+  forest(){
+    const grad=ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,"#04120a"); grad.addColorStop(1,"#020806");
+    const far=bgLayer(g=>{
+      const r=bgRng(31);
+      for(const tx of [1,8,17,98,108,116]){ // 幹(画面端寄り)。縦一様なのでタイル境界も自然
+        const wCell=2+(r()*2|0), x=tx*BG_P;
+        g.fillStyle="rgba(4,18,10,0.9)"; g.fillRect(x,0,wCell*BG_P,H);
+        g.fillStyle="rgba(12,40,22,0.5)"; g.fillRect(x,0,BG_P,H); // 幹のハイライト
+        for(let k=0;k<7;k++){ // 枝
+          const y=((r()*H/BG_P)|0)*BG_P, len=(2+r()*4|0)*BG_P, dir=tx<60?1:-1;
+          g.fillStyle="rgba(6,24,14,0.8)";
+          bgDot(g, dir>0?x+wCell*BG_P:x-len, y, len, BG_P);
+        }
+      }
+      bgScatter(g,32,80,["rgba(7,26,14,0.55)","rgba(10,32,18,0.4)"],5,2); // 梢の暗がり
+    });
+    const near=bgLayer(g=>{
+      bgScatter(g,41,60,["rgba(13,44,22,0.45)","rgba(18,56,30,0.35)"],3,1); // 葉群
+      bgScatter(g,42,26,["rgba(40,90,50,0.30)"],1,2);                        // 垂れる蔦
+    });
+    const bossArt=bgLayer(g=>{
+      // 姫の薔薇: 同心の花弁リング+輝き
+      const cx=W/2, cy=215, cols=["rgba(74,18,48,0.5)","rgba(112,26,68,0.42)","rgba(150,42,85,0.34)"];
+      for(let ring=0;ring<8;ring++){
+        const rad=28+ring*13, n=(rad*0.6)|0;
+        g.fillStyle=cols[ring%3];
+        for(let k=0;k<n;k++){
+          const a=k/n*TAU+ring*0.9;
+          g.fillRect(bgSnap(cx+Math.cos(a)*rad),bgSnap(cy+Math.sin(a)*rad*0.85),BG_P,BG_P);
+        }
+      }
+      g.fillStyle="rgba(255,170,210,0.12)"; g.beginPath(); g.arc(cx,cy,26,0,TAU); g.fill();
+      bgScatter(g,51,30,["rgba(150,60,100,0.25)","rgba(200,120,160,0.15)"]); // 舞う花弁
+    });
+    return { base:g=>{g.fillStyle=grad;g.fillRect(0,0,W,H);}, far, near,
+      bossTint:"rgba(10,3,10,0.72)", bossArt,
+      anim(){ // 蛍(ボス戦=薔薇園では桃色に)
+        for(let i=0;i<10;i++){
+          const x=(i*191)%W+Math.sin((game.frame+i*40)*0.02)*30;
+          const y=(i*257)%H+Math.sin((game.frame+i*97)*0.013)*22;
+          const a=0.08+0.15*(0.5+0.5*Math.sin((game.frame+i*61)*0.05));
+          ctx.fillStyle=bgBossFade>0.5?`rgba(240,150,190,${a})`:`rgba(216,232,106,${a})`;
+          ctx.fillRect(bgSnap(x),bgSnap(y),BG_P,BG_P);
+        }
+      } };
+  },
+  //--- オンラインサロンの宗教: 暗い大聖堂。遠景=柱+ステンドグラス / 近景=香煙 / ボス=ローズウィンドウ
+  salon(){
+    const grad=ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,"#0a0716"); grad.addColorStop(1,"#050309");
+    const glass=["rgba(58,42,26,0.40)","rgba(26,42,58,0.40)","rgba(42,26,58,0.40)","rgba(58,26,34,0.35)"];
+    const far=bgLayer(g=>{
+      const r=bgRng(61);
+      for(const tx of [3,113]){ // 両端の柱(縦一様)
+        const x=tx*BG_P;
+        g.fillStyle="rgba(18,12,34,0.9)"; g.fillRect(x,0,4*BG_P,H);
+        g.fillStyle="rgba(36,26,62,0.6)"; g.fillRect(x+BG_P,0,BG_P,H);
+      }
+      for(let wy=0; wy<4; wy++){ // 尖頭アーチ窓(左右2列、縦にタイル)
+        for(const wx of [14,96]){
+          const bx=wx*BG_P, by=(wy*40+6)*BG_P, wCell=10;
+          for(let row=0;row<26;row++){
+            const shrink=row<5?(5-row):0; // 上端をすぼめてアーチに
+            for(let col=shrink; col<wCell-shrink; col++){
+              if((row+col)%2===0) continue; // 市松に抜いてモザイク感
+              g.fillStyle=glass[(r()*glass.length)|0];
+              bgDot(g,bx+col*BG_P,by+row*BG_P,BG_P,BG_P);
+            }
+          }
+        }
+      }
+    });
+    const near=bgLayer(g=>{
+      bgScatter(g,71,40,["rgba(90,80,120,0.16)","rgba(120,110,150,0.10)"],1,3); // 香煙のすじ
+      bgScatter(g,72,30,["rgba(200,180,120,0.12)"]);                            // 金粉
+    });
+    const bossArt=bgLayer(g=>{
+      // ローズウィンドウ: 円形モザイク+金の縁+放射光
+      const cx=W/2, cy=215;
+      g.fillStyle="rgba(220,190,110,0.05)";
+      for(let ray=0;ray<12;ray++){ // 放射光
+        const a=ray/12*TAU;
+        for(let d=60;d<330;d+=BG_P){
+          g.fillRect(bgSnap(cx+Math.cos(a)*d),bgSnap(cy+Math.sin(a)*d),BG_P,BG_P);
+        }
+      }
+      const r=bgRng(81);
+      for(let rad=18;rad<=120;rad+=8){ // 円形モザイク
+        const n=(rad*0.8)|0;
+        for(let k=0;k<n;k++){
+          const a=k/n*TAU;
+          g.fillStyle=glass[(((a*6)|0)+((rad/8)|0))%glass.length].replace("0.4","0.5").replace("0.35","0.5");
+          if(r()<0.85) g.fillRect(bgSnap(cx+Math.cos(a)*rad),bgSnap(cy+Math.sin(a)*rad),BG_P,BG_P);
+        }
+      }
+      g.fillStyle="rgba(150,120,50,0.45)"; // 金の縁
+      const n=(128*0.9)|0;
+      for(let k=0;k<n;k++){ const a=k/n*TAU; g.fillRect(bgSnap(cx+Math.cos(a)*128),bgSnap(cy+Math.sin(a)*128),BG_P,BG_P); }
+      g.fillStyle="rgba(230,200,130,0.20)"; g.beginPath(); g.arc(cx,cy,16,0,TAU); g.fill();
+    });
+    return { base:g=>{g.fillStyle=grad;g.fillRect(0,0,W,H);}, far, near,
+      bossTint:"rgba(6,3,12,0.72)", bossArt,
+      anim(){ // 蝋燭の焔(下部の固定位置で明滅)
+        for(let i=0;i<6;i++){
+          const x=[9,22,32,86,96,109][i]*BG_P, y=H-14*BG_P;
+          const a=0.15+0.13*(0.5+0.5*Math.sin((game.frame*0.11+i*2.1)));
+          ctx.fillStyle=`rgba(255,190,90,${a})`;
+          ctx.fillRect(x,y,BG_P,BG_P);
+          ctx.fillStyle=`rgba(255,230,160,${a*0.6})`;
+          ctx.fillRect(x,y-BG_P,BG_P,BG_P);
+        }
+      } };
+  },
+};
+const bgCache=new Map();
+function getBg(theme){ if(!bgCache.has(theme)) bgCache.set(theme,BG_BUILDERS[theme]()); return bgCache.get(theme); }
+
+let bgBossFade=0; // ボス背景へのクロスフェード(0=道中,1=ボス)
+function drawStageBG(theme){
+  const L=getBg(theme);
+  L.base(ctx);
+  ctx.imageSmoothingEnabled=false;
+  const sFar=bgSnap(game.scroll*0.25)%H, sNear=bgSnap(game.scroll*0.6)%H;
+  ctx.drawImage(L.far,0,sFar); ctx.drawImage(L.far,0,sFar-H);
+  ctx.drawImage(L.near,0,sNear); ctx.drawImage(L.near,0,sNear-H);
+  bgBossFade=clamp(bgBossFade+(boss?0.015:-0.03),0,1);
+  if(bgBossFade>0){
+    ctx.globalAlpha=bgBossFade;
+    ctx.fillStyle=L.bossTint; ctx.fillRect(0,0,W,H);
+    ctx.drawImage(L.bossArt,0,0);
+    ctx.globalAlpha=1;
+  }
+  if(L.anim)L.anim();
+  ctx.imageSmoothingEnabled=true;
+  ctx.fillStyle="rgba(5,3,12,0.30)"; ctx.fillRect(0,0,W,H); // 弾の視認性: 全体を一段沈める
+}
+
 function drawBG(){
+  // プレイ中でシナリオが bgTheme を持つ場合は固有のピクセルアート背景
+  // (シンギュラリティ等 bgTheme なしのシナリオは従来の01レイン背景のまま)
+  if(game.state==="play" && SCENARIOS.length && curScenario().bgTheme){
+    drawStageBG(curScenario().bgTheme);
+    return;
+  }
   ctx.fillStyle="#05030c"; ctx.fillRect(0,0,W,H);
   // 星
   ctx.save();
@@ -2107,6 +2314,7 @@ function startGame(){
   pBullets=[]; eBullets=[]; enemies=[]; items=[]; effects=[]; boss=null; cutIn=null;
   game.dialog=null;
   game.demo=false; game.demoEnd=null;
+  bgBossFade=0;
   game.banner={t:0, dur:210};
   buildStage();
 }

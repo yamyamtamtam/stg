@@ -187,6 +187,7 @@ const spells = [
 
 registerScenario({
   name:"オタサーの森", sub:"貢ぎ物募集中",
+  bgTheme:"forest",
   buildStage,
   dialogPre: DIALOG_PRE,
   dialogPost: DIALOG_POST,

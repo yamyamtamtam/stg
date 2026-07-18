@@ -150,6 +150,7 @@ const spells = [
 
 registerScenario({
   name:"ホモガキミームの海", sub:"114514 connect.",
+  bgTheme:"sea",
   buildStage,
   dialogPre: DIALOG_PRE,
   dialogPost: DIALOG_POST,

@@ -285,6 +285,7 @@ const spells = [
 
 registerScenario({
   name:"オンラインサロンの宗教", sub:"再現性の疑問",
+  bgTheme:"salon",
   buildStage,
   dialogPre: DIALOG_PRE,
   dialogPost: DIALOG_POST,
