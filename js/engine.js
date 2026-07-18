@@ -416,7 +416,7 @@ const CHARA_CHIP = { w:250, h:42, x:(W-250)/2, y:H-70 };
 const CHARA_ENTRIES = [
   { imgKey:"URARA_PORTRAIT", name:"神北うらら", tag:"☀️ 民俗学ギャル", color:"#ffd76e",
     desc:"民俗学(普通の人々がどういう風に生きて来たかを見てゆく学問)の視点からインターネットを観察してゆく、民俗学ギャル☀️" },
-  { imgKey:"MISONO_PORTRAIT", name:"棗みその", tag:"🌙 考現学陰キャ", color:"#8ad4ff",
+  { imgKey:"MISONO_PORTRAIT", name:"棗みその", tag:"🌙 考現学陰キャ", color:"#d0d6e2", // 銀(髪色と同系。紫は暗背景に沈むため銀を採用)
     desc:"AIの脳みそで動く考現学(広い意味で「民俗学」と超近いけど、民俗学へのカウンターの学問)の視点でうららに対して辛口で絡んでゆく考現学陰キャ🌙" },
 ];
 
@@ -1694,12 +1694,12 @@ function drawOverlay(){
       ctx.fillStyle = focus ? "rgba(255,215,110,0.16)" : "rgba(5,3,12,0.85)";
       ctx.fillRect(c.x,c.y,c.w,c.h);
       const grad=ctx.createLinearGradient(c.x,0,c.x+c.w,0);
-      grad.addColorStop(0,"#ffd76e"); grad.addColorStop(1,"#8ad4ff"); // うらら(太陽)→みその(月)
+      grad.addColorStop(0,"#ffd76e"); grad.addColorStop(1,"#d0d6e2"); // うらら(太陽の金)→みその(月の銀)
       ctx.strokeStyle=grad; ctx.lineWidth = focus?2.5:1.5;
       ctx.strokeRect(c.x,c.y,c.w,c.h);
       // 左右の飾りノッチ(他のボタンとの差別化)
       ctx.fillStyle="#ffd76e"; ctx.fillRect(c.x-6, c.y+c.h/2-3, 4, 6);
-      ctx.fillStyle="#8ad4ff"; ctx.fillRect(c.x+c.w+2, c.y+c.h/2-3, 4, 6);
+      ctx.fillStyle="#d0d6e2"; ctx.fillRect(c.x+c.w+2, c.y+c.h/2-3, 4, 6);
       ctx.fillStyle = focus ? "#ffd76e" : "#e8e2f5"; ctx.font="bold 15px sans-serif";
       ctx.fillText("☀️ キャラクター紹介 🌙", c.x+c.w/2, c.y+27);
       ctx.lineWidth=1;
