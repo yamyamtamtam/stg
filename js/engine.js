@@ -25,7 +25,7 @@ function playBgm(track){
 // state/ボスの有無からその場面のBGMを決めて切り替える(タイトル〜チュートリアルは共通、プレイ中は道中/ボス戦を自動切替)。
 // シナリオが bgm:"キー名" を定義していると、会話パート〜ボス撃破(会話含む)はその曲に差し替わる
 function updateBgm(){
-  if(INTRO_ORDER.includes(game.state)){ playBgm(BGM.TITLE); return; }
+  if(INTRO_ORDER.includes(game.state) || game.state==="chara"){ playBgm(BGM.TITLE); return; }
   if(game.state==="play"){
     const sb = curScenario() && curRoute().bgm;
     if(sb && (boss || game.dialog || game.demo)){ playBgm(BGM[sb]); return; }
@@ -80,13 +80,19 @@ function wordSprite(word, color){
   const meas=document.createElement("canvas").getContext("2d");
   meas.font="bold 12px sans-serif";
   const tw = Math.ceil(meas.measureText(word).width);
-  const w = tw+16, h = 20;
-  c=document.createElement("canvas"); c.width=w; c.height=h;
+  // 視認性のため文字全体を白い丸で囲む(円の見た目は判定円b.rより大きい=プレイヤー有利のまま)
+  const cr = Math.ceil(Math.hypot(tw/2, 8)) + 3;   // 文字ボックスの外接円半径+余白
+  const size = cr*2+4;
+  c=document.createElement("canvas"); c.width=size; c.height=size;
   const g=c.getContext("2d");
+  g.fillStyle="rgba(5,3,12,0.6)";                  // 背景と分離する暗色の下地
+  g.beginPath(); g.arc(size/2,size/2,cr,0,Math.PI*2); g.fill();
+  g.strokeStyle="#ffffff"; g.lineWidth=1.6;
+  g.beginPath(); g.arc(size/2,size/2,cr-0.8,0,Math.PI*2); g.stroke();
   g.font="bold 12px sans-serif"; g.textAlign="center"; g.textBaseline="middle";
   g.lineWidth=3; g.strokeStyle="rgba(5,3,12,0.9)";
-  g.strokeText(word, w/2, h/2);
-  g.fillStyle=color; g.fillText(word, w/2, h/2);
+  g.strokeText(word, size/2, size/2);
+  g.fillStyle=color; g.fillText(word, size/2, size/2);
   wordSpriteCache.set(key,c); return c;
 }
 //--- 数字弾スプライト: 数字ごとにキャッシュ ---
@@ -203,8 +209,21 @@ addEventListener("keydown", e=>{
     seMenuConfirm(); startDemo(); return;
   }
   if(game.state==="scenario" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
-    game.scenario = clamp(game.scenario + (e.key==="ArrowDown"?1:-1), 0, SCENARIOS.length-1);
+    // 最下段のシナリオからさらに↓で画面下部のキャラクター紹介ボタンにフォーカスが移る
+    if(e.key==="ArrowDown"){
+      if(!game.charaFocus && game.scenario===SCENARIOS.length-1) game.charaFocus=true;
+      else if(!game.charaFocus) game.scenario = clamp(game.scenario+1, 0, SCENARIOS.length-1);
+    }else{
+      if(game.charaFocus) game.charaFocus=false;
+      else game.scenario = clamp(game.scenario-1, 0, SCENARIOS.length-1);
+    }
     seMenuMove();
+  }
+  if(game.state==="scenario" && game.charaFocus && !e.repeat && (e.key==="z"||e.key==="Z")){
+    seMenuConfirm(); game.state="chara"; return;
+  }
+  if(game.state==="chara" && !e.repeat && (e.key==="z"||e.key==="Z"||e.key==="Escape")){
+    seMenuConfirm(); game.state="scenario"; return; // 紹介画面からシナリオ選択へ戻る
   }
   if(game.state==="route" && !e.repeat && (e.key==="ArrowUp"||e.key==="ArrowDown")){
     game.route = clamp(game.route + (e.key==="ArrowDown"?1:-1), 0, curScenario().routes.length-1);
@@ -265,9 +284,12 @@ cv.addEventListener("touchstart", e=>{
     }
     if(game.state==="scenario"){
       const {x:cx,y:cy} = clientToCanvas(t.clientX, t.clientY);
+      const cc = CHARA_CHIP;
+      if(cx>=cc.x&&cx<=cc.x+cc.w&&cy>=cc.y&&cy<=cc.y+cc.h){ seMenuConfirm(); game.state="chara"; touch.lastTap=0; return; } // キャラクター紹介を開く
       const chip=SCENARIO_CHIPS.find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
       if(chip){ game.scenario=chip.i; introAdvance(); touch.lastTap=0; return; } // シナリオをタップしたら即次の画面へ
     }
+    if(game.state==="chara"){ seMenuConfirm(); game.state="scenario"; touch.lastTap=0; return; } // どこをタップしても戻る
     if(game.state==="route"){
       const {x:cx,y:cy} = clientToCanvas(t.clientX, t.clientY);
       const chip=routeChips().find(c=>cx>=c.x&&cx<=c.x+c.w&&cy>=c.y&&cy<=c.y+c.h);
@@ -330,6 +352,7 @@ const game = {
   demo:false,            // ASIデモプレイ中(回避AIが操作。タップ/Zでタイトルへ)
   demoEnd:null,          // デモ撃破後の画面 {t}(セリフ→自動リプレイ)
   demoFocus:false,       // 難易度選択画面でデモボタンにフォーカスしているか
+  charaFocus:false,      // シナリオ選択画面でキャラクター紹介ボタンにフォーカスしているか
 };
 
 //--- 難易度設定(4段階): 弾速よりも弾密度/パターン数・敵HP・初期残機/ボム数で調整 ---
@@ -386,6 +409,17 @@ function routeChips(){
   }));
 }
 
+// シナリオ選択画面のキャラクター紹介ボタン(シナリオカードとは別デザインで、
+// リストから離して画面下部に配置。タッチ当たり判定と描画で共有)
+const CHARA_CHIP = { w:250, h:42, x:(W-250)/2, y:H-70 };
+// キャラクター紹介画面の内容(state:"chara"。シナリオ選択⇔紹介を行き来する)
+const CHARA_ENTRIES = [
+  { imgKey:"URARA_PORTRAIT", name:"神北うらら", tag:"☀️ 民俗学ギャル", color:"#ffd76e",
+    desc:"民俗学(普通の人々がどういう風に生きて来たかを見てゆく学問)の視点からインターネットを観察してゆく、民俗学ギャル☀️" },
+  { imgKey:"MISONO_PORTRAIT", name:"棗みその", tag:"🌙 考現学陰キャ", color:"#d0d6e2", // 銀(髪色と同系。紫は暗背景に沈むため銀を採用)
+    desc:"AIの脳みそで動く考現学(広い意味で「民俗学」と超近いけど、民俗学へのカウンターの学問)の視点でうららに対して辛口で絡んでゆく考現学陰キャ🌙" },
+];
+
 // クリア/ゲームオーバー画面のメニュー(縦一列。タッチ当たり判定と描画で共有)
 const END_MENU = ["もう一度やる","タイトルに戻る"];
 const END_ROW_H = 44, END_ROW_GAP = 10, END_ROW_W = 220;
@@ -437,6 +471,7 @@ function introAdvance(){
   let next = INTRO_ORDER[idx+1];
   if(next==="route" && !curScenario().routes) next = INTRO_ORDER[idx+2]; // ルート分岐のないシナリオはこの画面を飛ばす
   game.state = next;
+  if(game.state==="scenario"){ game.charaFocus=false; }
   if(game.state==="route"){ game.route = clamp(game.route, 0, curScenario().routes.length-1); }
   if(game.state==="difficulty"){ game.diff = clamp(game.diff, 0, diffCount()-1); game.demoFocus=false; } // シナリオ専用難易度は選択肢数が違う
   if(game.state==="tutorial"){ game.tutIdx=0; game.tutTimer=0; resetTutorialDemoStep(); }
@@ -1632,8 +1667,8 @@ function drawOverlay(){
     ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
     ctx.fillText("シナリオ選択",W/2,listTop-30);
     for(const c of SCENARIO_CHIPS){
-      // キーボードでカーソルが当たっている項目は金色で強調表示する
-      const active = c.i===game.scenario;
+      // キーボードでカーソルが当たっている項目は金色で強調表示する(キャラ紹介ボタンにフォーカス中は強調しない)
+      const active = c.i===game.scenario && !game.charaFocus;
       ctx.fillStyle = active ? "rgba(255,255,255,0.20)" : "rgba(255,255,255,0.14)";
       ctx.fillRect(c.x,c.y,c.w,c.h);
       ctx.strokeStyle = active ? "#ffd76e" : "#8b7fb5"; ctx.lineWidth = active?2:1;
@@ -1652,6 +1687,52 @@ function drawOverlay(){
     if(!IS_TOUCH) ctx.fillText("↑ ↓ で選択",W/2,listBottom+22);
     ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
     if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで決定":"Z キーで決定",W/2,listBottom+(IS_TOUCH?26:46));
+    // キャラクター紹介ボタン(シナリオカードとは別デザイン: 暗色地+☀️→🌙の2色グラデ枠。
+    // リストから離して画面下部に配置。↓でフォーカス/タップで開く)
+    {
+      const c=CHARA_CHIP, focus=game.charaFocus;
+      ctx.fillStyle = focus ? "rgba(255,215,110,0.16)" : "rgba(5,3,12,0.85)";
+      ctx.fillRect(c.x,c.y,c.w,c.h);
+      const grad=ctx.createLinearGradient(c.x,0,c.x+c.w,0);
+      grad.addColorStop(0,"#ffd76e"); grad.addColorStop(1,"#d0d6e2"); // うらら(太陽の金)→みその(月の銀)
+      ctx.strokeStyle=grad; ctx.lineWidth = focus?2.5:1.5;
+      ctx.strokeRect(c.x,c.y,c.w,c.h);
+      // 左右の飾りノッチ(他のボタンとの差別化)
+      ctx.fillStyle="#ffd76e"; ctx.fillRect(c.x-6, c.y+c.h/2-3, 4, 6);
+      ctx.fillStyle="#d0d6e2"; ctx.fillRect(c.x+c.w+2, c.y+c.h/2-3, 4, 6);
+      ctx.fillStyle = focus ? "#ffd76e" : "#e8e2f5"; ctx.font="bold 15px sans-serif";
+      ctx.fillText("☀️ キャラクター紹介 🌙", c.x+c.w/2, c.y+27);
+      ctx.lineWidth=1;
+    }
+  }
+  else if(game.state==="chara"){
+    ctx.fillStyle="#c9a7ff"; ctx.font="bold 18px sans-serif";
+    ctx.fillText("キャラクター紹介", W/2, 46);
+    CHARA_ENTRIES.forEach((ce,i)=>{
+      const top = 72 + i*268, flip = i%2===1; // 2人目は立ち絵を右側に(左右交互レイアウト)
+      const img = IMG[ce.imgKey];
+      const ph = 200;
+      let pw = 100;
+      if(img.complete && img.naturalWidth){
+        pw = img.naturalWidth * (ph/img.naturalHeight);
+        ctx.imageSmoothingEnabled=true;
+        ctx.drawImage(img, flip ? W-20-pw : 20, top+16, pw, ph);
+      }
+      // テキストは立ち絵の反対側に中央寄せ
+      const txw = W - pw - 64;
+      const txc = flip ? 24+txw/2 : (pw+40)+txw/2;
+      ctx.fillStyle=ce.color; ctx.font="bold 20px serif";
+      ctx.fillText(ce.name, txc, top+40);
+      ctx.fillStyle="#e8e2f5"; ctx.font="bold 12px sans-serif";
+      ctx.fillText(ce.tag, txc, top+62);
+      ctx.strokeStyle=ce.color; ctx.globalAlpha=0.45;
+      ctx.beginPath(); ctx.moveTo(txc-txw/2+14, top+74); ctx.lineTo(txc+txw/2-14, top+74); ctx.stroke();
+      ctx.globalAlpha=1;
+      ctx.fillStyle="#cfc7e8"; ctx.font="12px sans-serif";
+      wrapCenterText(ce.desc, txc, top+94, txw-8, 19);
+    });
+    ctx.fillStyle="#e8e2f5"; ctx.font="14px sans-serif";
+    if(Math.floor(game.frame/30)%2===0) ctx.fillText(IS_TOUCH?"タップで戻る":"Z キーで戻る", W/2, H-22);
   }
   else if(game.state==="route"){
     const chips = routeChips();
