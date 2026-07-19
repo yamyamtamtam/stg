@@ -1950,8 +1950,8 @@ function drawDialog(){
       ctx.drawImage(IMG.URARA_CRY_PORTRAIT, (W-pw)/2, H-ph-118, pw, ph);
     }
   }else if(isIntro){
-    // ステージ開始時のぼやき: うらら単独(通常の会話と同じ左配置)。ボス立ち絵は出さない
-    drawP(IMG.URARA_PORTRAIT, true, true, 0.85, 8, 108);
+    // ステージ開始時のぼやき: うらら単独を画面中央に表示。ボス立ち絵は出さない
+    drawP(IMG.URARA_PORTRAIT, "center", true, 0.85, 8, 108);
   }else{
     // 話者を後に描いて手前に出す。ボス立ち絵の画像/配置はシナリオ定義から取得
     // (bd.solo=ボス単独でうららを出さない / bd.center=ボス立ち絵を画面中央に配置)
