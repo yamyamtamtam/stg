@@ -475,6 +475,8 @@ def build():
         'MISONO_DEFEATED_PORTRAIT': portrait(ROOT/'assets/source/misono_defeated.png', 420),
         # うらら: ゲームオーバー会話用(悔しがる顔)
         'URARA_CRY_PORTRAIT': portrait(ROOT/'assets/source/urara_cry.png', 420),
+        # うらら: ステージ開始ぼやき用(困り顔。白背景を輪郭連結flood fillで透過済みのソース)
+        'URARA_TROUBLE_PORTRAIT': portrait(ROOT/'assets/source/urara_trouble.png', 420),
         # オタサーの姫: 立ち絵をそのまま楕円ビネットでクロップ(会話・カットイン用)
         'HIME_PORTRAIT': portrait(ROOT/'assets/source/hime_bust.png', 420),
         # オンラインサロン主: AI生成の実写写真をそのまま使用(切り抜きなし)
@@ -512,6 +514,7 @@ def inject(sprites, ports):
         'MISONO_PORTRAIT': to_b64(ports['MISONO_PORTRAIT']),
         'MISONO_DEFEATED_PORTRAIT': to_b64(ports['MISONO_DEFEATED_PORTRAIT']),
         'URARA_CRY_PORTRAIT': to_b64(ports['URARA_CRY_PORTRAIT']),
+        'URARA_TROUBLE_PORTRAIT': to_b64(ports['URARA_TROUBLE_PORTRAIT']),
         'HIME_PORTRAIT': to_b64(ports['HIME_PORTRAIT']),
         'SALON_PORTRAIT': to_b64(ports['SALON_PORTRAIT']),
     }

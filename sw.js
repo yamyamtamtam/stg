@@ -1,6 +1,6 @@
 // PWAオフラインキャッシュ(手書き。自動生成ではない)
 // キャッシュ対象を変えたら CACHE のバージョン番号を上げて古いキャッシュを破棄させること
-const CACHE = 'it-stg-v10';
+const CACHE = 'it-stg-v17';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,7 @@ const ASSETS = [
   './js/scenarios/scenario2_otasa.js',
   './js/scenarios/scenario3_salon.js',
   './js/scenarios/scenario4_singularity.js',
+  './js/scenarios/scenario5_singularity2.js',
 ];
 
 self.addEventListener('install', e => {
