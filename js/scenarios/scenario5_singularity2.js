@@ -21,7 +21,7 @@ const P = {
 };
 // モード差分: 人間用は弾速・レートを大きく落とす(パターンは同一)
 const MODE_HUMAN = { speed:0.52, intA:3, intB:4 };
-const MODE_AI    = { speed:1.0,  intA:1, intB:2 };
+const MODE_AI    = { speed:2.0,  intA:1, intB:2 }; // AI用は弾速2倍(人間には反応不能な速度)
 const mode = ()=> game.diff===0 ? MODE_HUMAN : MODE_AI;
 
 //--- 針弾スプライト(+x向きのカプセル。spin:0で進行方向を向く) ---
@@ -45,6 +45,9 @@ const spells = [
     onStart(b){ b.tx=W/2; b.ty=110; b.thetaR=P.SWEEP_HALF; b.passSeed=0; },
     fire(b){
       const m = mode();
+      // 敵機は少しずつ移動しながら撃つ: すだれの発生源が流れ、静的な安全レーンが消える
+      b.tx = W/2 + Math.sin(b.t*0.006)*120;
+      b.ty = 110 + Math.sin(b.t*0.011)*34;
       // 青針すだれ: 真下を中心に三角波で往復する掃射。掃射が速いので弾列が
       // 斜めの縦縞(すだれの簾)になり、往路と復路で縞の向きが切り替わる=切り返し
       const ph = (b.t % P.SWEEP_PERIOD) / P.SWEEP_PERIOD;         // 0..1
@@ -85,7 +88,7 @@ registerScenario({
   },
   bossBarrierOnInvul: true,
   bgm: "SINGULARITY",
-  demoLabel: "ASIデモプレイ(すだれの向こう側へ)",
+  demoLabel: "ASIデモプレイ",
   demoDiff: 1, // AI用
   demoPlayerSprite: dir => dir<0 ? IMG.MISONO_BACK_SPRITE_LEFT : dir>0 ? IMG.MISONO_BACK_SPRITE_RIGHT : IMG.MISONO_BACK_SPRITE,
   demoEndWho: "光翼型残酷戦闘娘",
