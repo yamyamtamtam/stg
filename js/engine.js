@@ -682,6 +682,8 @@ function startDialogueIntro(){
   game.dialog = {idx:0, set:"intro"};
 }
 function startDialogueAfter(){
+  // セリフ無しシナリオ(dialogPost未定義/空)は会話を挟まず直接クリアへ
+  if(!(curRoute().dialogPost||[]).length){ game.state="clear"; game.endSel=0; return; }
   game.dialog = {idx:0, set:"post"};
   eBullets.length=0; pBullets.length=0;
 }
@@ -1463,6 +1465,8 @@ function drawBoss(){
   if(!boss)return;
   const b=boss;
   ctx.save(); ctx.translate(b.x,b.y);
+  // シナリオ定義の背面装飾フック(例: シナリオ5の虹色光翼)。オーラ・カードより奥に描く
+  if(curRoute().boss.drawBack) curRoute().boss.drawBack(b);
   // オーラ
   ctx.globalAlpha=0.25+Math.sin(game.frame*0.1)*0.08;
   ctx.fillStyle="#c96bff";
