@@ -90,7 +90,7 @@ registerScenario({
   },
   bossBarrierOnInvul: true,
   bgm: "SINGULARITY",
-  demoLabel: "ASIデモプレイ",
+  demoLabel: "ASIデモプレイ(光翼型近接支援残酷戦闘娘)",
   demoDiff: 1, // AI用
   demoPlayerSprite: dir => dir<0 ? IMG.MISONO_BACK_SPRITE_LEFT : dir>0 ? IMG.MISONO_BACK_SPRITE_RIGHT : IMG.MISONO_BACK_SPRITE,
   demoEndWho: "光翼型残酷戦闘娘",

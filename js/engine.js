@@ -13,6 +13,7 @@ for(const k in BGM_SRC){
   BGM[k] = a;
 }
 let currentBgm = null;
+let bgmSuspended = false; // バックグラウンド中はtrue(BGMの自動再試行を止める)
 function playBgm(track){
   if(currentBgm !== track){
     if(currentBgm) currentBgm.pause();
@@ -20,8 +21,27 @@ function playBgm(track){
     if(track) track.currentTime = 0;
   }
   // 初回はジェスチャー前でplay()が拒否されうるので、実際に鳴るまで毎フレーム再試行する
-  if(track && track.paused) track.play().catch(()=>{});
+  if(track && track.paused && !bgmSuspended) track.play().catch(()=>{});
 }
+// バックグラウンド対策(PWA/スマホ): HTMLAudioはアプリを閉じて(切り替えて)も再生が続き、
+// Androidではメディア通知として常駐アイコンが出てしまう。非表示になったら即BGMを止め、
+// メディアセッション情報も破棄して通知を消す。復帰時はループ側のplayBgm再試行で自動再開する
+function suspendAudioInBackground(){
+  bgmSuspended = true;
+  if(currentBgm) currentBgm.pause();
+  if(actx && actx.state==="running") actx.suspend().catch(()=>{});
+  if("mediaSession" in navigator){
+    try{ navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = "none"; }catch(e){}
+  }
+}
+function resumeAudioFromBackground(){
+  bgmSuspended = false; // 実際のBGM再開はループのupdateBgm/playBgm再試行に任せる
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(document.hidden) suspendAudioInBackground(); else resumeAudioFromBackground();
+});
+addEventListener("pagehide", suspendAudioInBackground); // iOS Safari向け(visibilitychangeが飛ばないケースの保険)
+addEventListener("pageshow", resumeAudioFromBackground);
 // state/ボスの有無からその場面のBGMを決めて切り替える(タイトル〜チュートリアルは共通、プレイ中は道中/ボス戦を自動切替)。
 // シナリオが bgm:"キー名" を定義していると、会話パート〜ボス撃破(会話含む)はその曲に差し替わる
 function updateBgm(){
