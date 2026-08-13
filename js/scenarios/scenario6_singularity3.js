@@ -15,6 +15,18 @@ const MODE_HUMAN = { speed:0.55, rate:2, revN:48,  revSpeed:2.8 };
 const MODE_AI    = { speed:1.15, rate:1, revN:128, revSpeed:5.0 }; // 打ち返しは本家同様128way超高速
 const mode = ()=> game.diff===0 ? MODE_HUMAN : MODE_AI;
 
+// 上の安置対策(全モード共通): ボスと同じ高さ以上に張り付く自機へ、確殺の超高速8way自機狙い。
+// 弾速はモード倍率をかけない絶対値(人間用でも逃げ切れない=安置禁止の明示)
+function punishTopCamp(b){
+  if(player.y < b.y + 36 && b.t % 28 === 0){
+    const base = aimAt(b.x, b.y);
+    for(let i=0;i<8;i++){
+      const off = (i/7 - 0.5) * 30*DEG;
+      shot(b.x, b.y, base+off, 9.0, {r:4, color:"#ffd76e", edge:"#fff6cc"});
+    }
+  }
+}
+
 const DIALOG_PRE  = [ {who:"棗みその", text:"次は君に任せたいんだ"} ];
 const DIALOG_POST = [ {who:"棗みその", text:"君ならできるよ"} ];
 
@@ -28,14 +40,15 @@ const spells = [
       b.tx = W/2 + Math.sin(b.t*0.007)*90;
       b.ty = 120 + Math.sin(b.t*0.012)*24;
       // 大玉リング: ゆっくり広がる紫大玉の全方位。リングごとに回転させて隙間を移動させる
-      if(b.t % (44*m.rate) === 0){
+      if(b.t % (22*m.rate) === 0){
         b.ringOfs += 0.19;
         ring(b.x, b.y, 18, 1.5*m.speed, b.ringOfs, {r:11, color:"#c96bff", edge:"#f0d8ff"});
       }
       // 自機狙い高速小弾: 3連バースト(1発ずつ僅かに角度が散る)
-      if(b.t % (26*m.rate) < 3*m.rate && b.t % m.rate === 0){
+      if(b.t % (13*m.rate) < 3*m.rate && b.t % m.rate === 0){
         shot(b.x, b.y+10, aimAt(b.x,b.y)+rand(-4,4)*DEG, 4.6*m.speed, {r:4, color:"#8ad4ff", edge:"#e6f6ff"});
       }
+      punishTopCamp(b);
     },
   },
   {
@@ -48,7 +61,7 @@ const spells = [
       b.tx = W/2 + Math.sin(b.t*0.009)*110;
       b.ty = 110 + Math.sin(b.t*0.015)*28;
       if(b.t % m.rate === 0){
-        for(let k=0;k<3;k++){
+        for(let k=0;k<4;k++){
           const a = (90 + rand(-88,88))*DEG;              // 下半円ほぼ全域
           const sp = rand(1.7,4.1)*m.speed;                // 弾速もランダム=雨のムラ
           shot(b.x, b.y+8, a, sp, {r:6, color:k%2?"#c96bff":"#ff8ae0", edge:"#f0d8ff"});
@@ -57,6 +70,7 @@ const spells = [
       if(b.t % (60*m.rate) === 30*m.rate){                 // 大玉アクセント: 自機側へ緩く5way
         nway(b.x, b.y, aimAt(b.x,b.y), 5, 0.9, 1.4*m.speed, {r:12, color:"#9a4dff", edge:"#e0ccff"});
       }
+      punishTopCamp(b);
     },
   },
 ];
