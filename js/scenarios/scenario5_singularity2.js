@@ -16,12 +16,12 @@ const P = {
   SPEED_BLUE: 5.2,    // 青針弾速(AI用基準)
   SPEED_RED: 4.2,     // 赤針弾速
   OMEGA_RED: 4.6,     // 赤針の逆回転角速度(度/frame)
-  AIM_INTERVAL: 50,   // 自機狙い2wayの間隔
+  AIM_INTERVAL: 36,   // 自機狙い2wayの間隔
   AIM_SPEED: 6.4,
 };
 // モード差分: 人間用は弾速・レートを大きく落とす(パターンは同一)
-const MODE_HUMAN = { speed:0.52, intA:3, intB:4 };
-const MODE_AI    = { speed:2.0,  intA:1, intB:2 }; // AI用は弾速2倍(人間には反応不能な速度)
+const MODE_HUMAN = { speed:0.52, intA:2, intB:3 };
+const MODE_AI    = { speed:2.0,  intA:1, intB:1 }; // AI用は弾速2倍(人間には反応不能な速度)
 const mode = ()=> game.diff===0 ? MODE_HUMAN : MODE_AI;
 
 //--- 針弾スプライト(+x向きのカプセル。spin:0で進行方向を向く) ---
@@ -55,7 +55,7 @@ const spells = [
       if(b.t % P.SWEEP_PERIOD === 0) b.passSeed = rand(-8,8);      // 往復ごとに縞の位相をずらす
       if(b.t % m.intA === 0){
         const a = (90 + tri*P.SWEEP_HALF + b.passSeed)*DEG;
-        for(const off of [0, 6*DEG]){
+        for(const off of [-6*DEG, 0, 6*DEG]){
           shot(b.x, b.y+8, a+off, P.SPEED_BLUE*m.speed, {r:3, sprite:NEEDLE_BLUE, spin:0});
         }
       }
@@ -63,8 +63,10 @@ const spells = [
       b.thetaR += P.OMEGA_RED * (ph<0.5 ? -1 : 1);
       if(b.t % m.intB === 0){
         const range = P.SWEEP_HALF*2;
-        const a = (90 - P.SWEEP_HALF + ((b.thetaR % range)+range)%range) * DEG;
-        shot(b.x, b.y+8, a, P.SPEED_RED*m.speed, {r:3, sprite:NEEDLE_RED, spin:0});
+        const aDeg = 90 - P.SWEEP_HALF + ((b.thetaR % range)+range)%range;
+        for(const d of [aDeg, 180-aDeg]){ // 垂直軸で対称の2本
+          shot(b.x, b.y+8, d*DEG, P.SPEED_RED*m.speed, {r:3, sprite:NEEDLE_RED, spin:0});
+        }
       }
       // 自機狙いの高速2way青針(安置潰し。「青針弾が2wayになる」要素)
       if(b.t>0 && b.t % P.AIM_INTERVAL === 0){
